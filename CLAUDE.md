@@ -11,8 +11,10 @@ This is a Model Context Protocol (MCP) server for integrating Odoo cloud apps wi
 - **Knowledge** (6 tools): Full CRUD on knowledge articles. Create, read, update, delete, archive articles with hierarchical organization.
 - **Helpdesk** (8 tools): List teams. Full CRUD on tickets. Create, read, update, close tickets. Send and read ticket messages with HTML support.
 - **Contacts** (7 tools): Full CRUD on contacts (companies and individuals). List, search, create, read, update, delete, archive contacts. Upload logos from URLs.
-- **Mailing Lists** (10 tools): Manage email marketing lists. Create, read, update, delete lists. Subscribe/unsubscribe contacts. Manage opt-in/opt-out status.
+- **Mailing Lists** (10 tools): Manage email marketing lists. Create, update, delete lists. Subscribe/unsubscribe contacts. Manage opt-in/opt-out status.
 - **Users** (1 tool): List Odoo users for task and ticket assignments.
+- **Activities** (7 tools): Manage scheduled follow-ups and activities. List, create, update, mark done, delete activities. List activity types. Activities can be linked to any Odoo record.
+- **To-Do App** (7 tools): Manage personal to-do list. List, create, update, mark done, delete to-dos. List stages. Organize by stages (Inbox, Today, This Week, This Month, Later).
 
 ## Commands
 
@@ -44,7 +46,9 @@ odoo-mcp/
 │   ├── helpdesk.py        # Helpdesk tickets operations (8 tools)
 │   ├── contacts.py        # Contacts/partners operations (7 tools)
 │   ├── mailing.py         # Mailing lists operations (10 tools)
-│   └── users.py           # Users operations (1 tool)
+│   ├── users.py           # Users operations (1 tool)
+│   ├── activities.py      # Activities/scheduled follow-ups (7 tools)
+│   └── todos.py           # To-Do app/personal tasks (7 tools)
 ├── test_connection.py     # Test script for Odoo connectivity
 ├── pyproject.toml        # Project dependencies
 ├── .env                  # Environment variables (gitignored)
@@ -71,6 +75,8 @@ Each Odoo app has its own handler module inheriting from OdooBase:
 - **ContactsHandler** (`contacts.py`) - 7 tools for contacts/partners
 - **MailingHandler** (`mailing.py`) - 10 tools for mailing lists
 - **UsersHandler** (`users.py`) - 1 tool for users
+- **ActivitiesHandler** (`activities.py`) - 7 tools for activities/scheduled follow-ups
+- **TodosHandler** (`todos.py`) - 7 tools for personal to-do list
 
 Each handler:
 - Implements tools as async methods
@@ -84,7 +90,7 @@ Each handler:
 The OdooMCPServer class:
 1. **Initialization** - Creates handler instances for each Odoo app
 2. **Connection sharing** - Establishes Odoo connection and shares it among all handlers
-3. **Tool registration** - Registers all 45 tools via `@server.list_tools()` decorator
+3. **Tool registration** - Registers all 59 tools via `@server.list_tools()` decorator
 4. **Tool routing** - Routes tool calls to appropriate handlers via `@server.call_tool()` decorator
 5. **Graceful shutdown** - Handles SIGINT/SIGTERM signals and cleans up resources
 
@@ -190,6 +196,8 @@ Required in `.env` file:
 - `mailing.contact` - Mailing contacts
 - `mailing.subscription` - List subscriptions (tracks opt-in/opt-out)
 - `mail.message` - Messages/chatter entries
+- `mail.activity` - Activities/to-dos (scheduled tasks and follow-ups)
+- `mail.activity.type` - Activity types (To-do, Call, Email, Meeting, etc.)
 
 ## Message Handling
 
@@ -243,6 +251,48 @@ Partner.write(contact_id, {"image_1920": image_base64})
 - `image_1920` is the full resolution image field
 - Images must be base64 encoded strings
 - Odoo automatically creates smaller variants (image_512, image_256, etc.)
+
+## To-Do App (Personal Tasks)
+
+The To-Do app uses `project.task` records without a project (`project_id = False`) and has special handling:
+
+**Personal Stages:**
+- To-Do tasks use `personal_stage_type_id` field (NOT `stage_id`)
+- Personal stages include: Inbox, Today, This Week, This Month, Later, Done
+- Stages are from `project.task.type` model
+
+**Marking Tasks as Done:**
+To properly mark a to-do as complete, you must set BOTH:
+1. `personal_stage_type_id` to a Done stage (with `fold=True`)
+2. `state` to `"1_done"`
+
+```python
+Task = self.odoo.env["project.task"]
+Stage = self.odoo.env["project.task.type"]
+
+# Find a Done stage with fold=True
+done_stage_ids = Stage.search([("name", "ilike", "done"), ("fold", "=", True)])
+done_stages = Stage.read(done_stage_ids, ["id", "sequence", "fold"])
+
+# Prefer Done stage with sequence 5-7 (typical for personal tasks)
+preferred_stage = None
+for stage in done_stages:
+    if stage.get("fold") and 5 <= stage.get("sequence", 0) <= 7:
+        preferred_stage = stage["id"]
+        break
+
+# Update task
+Task.write(todo_id, {
+    "personal_stage_type_id": preferred_stage,
+    "state": "1_done"
+})
+```
+
+**Key points:**
+- `is_closed` is a computed field based on the stage's `fold` attribute
+- Setting only `state="1_done"` marks it complete but doesn't move it to Done column
+- Setting only the stage doesn't mark it as complete (state remains in progress)
+- Both fields are required for proper "done" behavior in the UI
 
 ## Key Dependencies
 

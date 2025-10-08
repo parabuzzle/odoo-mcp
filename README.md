@@ -151,6 +151,26 @@ Add to your Cursor MCP settings.
 
 - **list_users**: List Odoo users with names, IDs, logins, and email addresses. Useful for assigning tasks and tickets to team members
 
+### Activities (Scheduled Follow-ups)
+
+- **list_activities**: List activities/to-dos with optional filtering by user, state (overdue, today, planned, done), or activity type. Returns all scheduled activities with details
+- **get_activity**: Get a specific activity by ID with full details including type, assignee, deadline, state, and linked record
+- **create_activity**: Create a new activity/to-do with summary, description, deadline, and assignee. Can be linked to any Odoo record or created as standalone
+- **update_activity**: Update an existing activity - modify summary, description, deadline, assignee, or activity type
+- **mark_activity_done**: Mark an activity as done/completed with optional feedback note
+- **delete_activity**: Permanently delete an activity
+- **list_activity_types**: List all available activity types (To-do, Call, Email, Meeting, etc.) with their default settings
+
+### To-Do App (Personal Tasks)
+
+- **list_todos**: List personal to-dos from the To-Do app with optional filtering by stage (Today, This Week, Inbox, Later) or user. Returns tasks without a project assignment
+- **get_todo**: Get a specific to-do by ID with full details including stage, priority, deadline, tags, and description
+- **create_todo**: Create a new personal to-do with name, description, deadline, stage, priority, and tags. Defaults to "Today" stage
+- **update_todo**: Update an existing to-do - modify name, description, deadline, stage (move between Today/This Week/etc.), or priority
+- **mark_todo_done**: Mark a to-do as done by moving it to the "Done" stage. Quick way to complete personal tasks
+- **delete_todo**: Permanently delete a to-do from the To-Do app
+- **list_todo_stages**: List all available to-do stages (Inbox, Today, This Week, This Month, Later, Done, etc.) with their sequence and fold status
+
 ## Supported Apps (Roadmap)
 
 - [x] Projects - interact with projects. Read, create, update, delete, and archive tasks.
@@ -158,6 +178,8 @@ Add to your Cursor MCP settings.
 - [x] Helpdesk - interact with helpdesk. Read, create, update, close tickets. Send messages for customer communication.
 - [x] Contacts - full CRUD operations on contacts. Read, create, update, delete, and archive contacts (companies and individuals).
 - [x] Mailing Lists - manage email marketing lists. Create, update, delete lists. Subscribe/unsubscribe contacts. Query subscriptions.
+- [x] Activities - manage scheduled follow-ups and activities. List, create, update, mark done, and delete activities. Link activities to any record.
+- [x] To-Do App - manage personal to-do list. List, create, update, mark done, and delete to-dos. Organize by stages (Today, This Week, etc.).
 
 ... more to come (or you can open a PR and add what you need!)
 
@@ -184,7 +206,9 @@ odoo-mcp/
 │   ├── helpdesk.py        # Helpdesk tickets operations (8 tools)
 │   ├── contacts.py        # Contacts/partners operations (7 tools)
 │   ├── mailing.py         # Mailing lists operations (10 tools)
-│   └── users.py           # Users operations (1 tool)
+│   ├── users.py           # Users operations (1 tool)
+│   ├── activities.py      # Activities/scheduled follow-ups (7 tools)
+│   └── todos.py           # To-Do app/personal tasks (7 tools)
 ├── test_connection.py     # Test script for Odoo connectivity
 ├── pyproject.toml        # Project dependencies
 ├── .env                  # Environment variables (gitignored)

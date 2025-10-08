@@ -16,6 +16,8 @@ from .helpdesk import HelpdeskHandler
 from .contacts import ContactsHandler
 from .mailing import MailingHandler
 from .users import UsersHandler
+from .activities import ActivitiesHandler
+from .todos import TodosHandler
 
 # Load environment variables
 load_dotenv()
@@ -39,6 +41,8 @@ class OdooMCPServer:
         self.contacts = ContactsHandler()
         self.mailing = MailingHandler()
         self.users = UsersHandler()
+        self.activities = ActivitiesHandler()
+        self.todos = TodosHandler()
 
         # Register handlers
         self.server.list_tools()(self.list_tools)
@@ -55,6 +59,8 @@ class OdooMCPServer:
         self.contacts.odoo = self.projects.odoo
         self.mailing.odoo = self.projects.odoo
         self.users.odoo = self.projects.odoo
+        self.activities.odoo = self.projects.odoo
+        self.todos.odoo = self.projects.odoo
 
     def cleanup(self):
         """Cleanup resources on shutdown."""
@@ -968,6 +974,307 @@ class OdooMCPServer:
                     }
                 }
             ),
+
+            # Activities tools
+            Tool(
+                name="list_activities",
+                description="List activities (to-dos). Returns all activities with optional filtering by user, state, or type.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of activities to return (default: 50)",
+                            "default": 50
+                        },
+                        "user_id": {
+                            "type": "integer",
+                            "description": "Filter by assigned user ID (optional)"
+                        },
+                        "state": {
+                            "type": "string",
+                            "description": "Filter by state: overdue, today, planned, done (optional)"
+                        },
+                        "activity_type": {
+                            "type": "string",
+                            "description": "Filter by activity type name, e.g. 'To-do', 'Call', 'Email', 'Meeting' (optional)"
+                        }
+                    }
+                }
+            ),
+            Tool(
+                name="get_activity",
+                description="Get a specific activity by ID with full details.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "activity_id": {
+                            "type": "integer",
+                            "description": "The ID of the activity to retrieve"
+                        }
+                    },
+                    "required": ["activity_id"]
+                }
+            ),
+            Tool(
+                name="create_activity",
+                description="Create a new activity/to-do. Can be linked to any record or created as a standalone to-do.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "summary": {
+                            "type": "string",
+                            "description": "The activity summary/title"
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "Detailed description (optional)"
+                        },
+                        "date_deadline": {
+                            "type": "string",
+                            "description": "Deadline in YYYY-MM-DD format (optional)"
+                        },
+                        "user_id": {
+                            "type": "integer",
+                            "description": "ID of user to assign to (optional, defaults to current user)"
+                        },
+                        "activity_type": {
+                            "type": "string",
+                            "description": "Type of activity: 'To-do', 'Call', 'Email', 'Meeting', etc. (optional, defaults to 'To-do')",
+                            "default": "To-do"
+                        },
+                        "res_model": {
+                            "type": "string",
+                            "description": "Model to link to, e.g. 'res.users', 'project.task', 'res.partner' (optional, defaults to 'res.users')",
+                            "default": "res.users"
+                        },
+                        "res_id": {
+                            "type": "integer",
+                            "description": "ID of record to link to (optional, defaults to assigned user ID)"
+                        }
+                    },
+                    "required": ["summary"]
+                }
+            ),
+            Tool(
+                name="update_activity",
+                description="Update an existing activity. Can modify summary, description, deadline, assignee, or type.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "activity_id": {
+                            "type": "integer",
+                            "description": "The ID of the activity to update"
+                        },
+                        "summary": {
+                            "type": "string",
+                            "description": "New activity summary/title (optional)"
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "New description (optional)"
+                        },
+                        "date_deadline": {
+                            "type": "string",
+                            "description": "New deadline in YYYY-MM-DD format (optional)"
+                        },
+                        "user_id": {
+                            "type": "integer",
+                            "description": "New assigned user ID (optional)"
+                        },
+                        "activity_type": {
+                            "type": "string",
+                            "description": "New activity type name (optional)"
+                        }
+                    },
+                    "required": ["activity_id"]
+                }
+            ),
+            Tool(
+                name="mark_activity_done",
+                description="Mark an activity as done/completed.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "activity_id": {
+                            "type": "integer",
+                            "description": "The ID of the activity to mark as done"
+                        },
+                        "feedback": {
+                            "type": "string",
+                            "description": "Optional feedback/note when completing the activity"
+                        }
+                    },
+                    "required": ["activity_id"]
+                }
+            ),
+            Tool(
+                name="delete_activity",
+                description="Delete an activity permanently.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "activity_id": {
+                            "type": "integer",
+                            "description": "The ID of the activity to delete"
+                        }
+                    },
+                    "required": ["activity_id"]
+                }
+            ),
+            Tool(
+                name="list_activity_types",
+                description="List all available activity types (To-do, Call, Email, Meeting, etc.).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {}
+                }
+            ),
+
+            # To-Do app tools
+            Tool(
+                name="list_todos",
+                description="List to-dos from the To-Do app (personal tasks without a project). Returns to-dos with optional filtering by stage or user.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of to-dos to return (default: 50)",
+                            "default": 50
+                        },
+                        "stage": {
+                            "type": "string",
+                            "description": "Filter by stage name, e.g. 'Today', 'This Week', 'Inbox', 'Later' (optional)"
+                        },
+                        "user_id": {
+                            "type": "integer",
+                            "description": "Filter by user ID (optional, defaults to current user)"
+                        }
+                    }
+                }
+            ),
+            Tool(
+                name="get_todo",
+                description="Get a specific to-do by ID with full details.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the to-do to retrieve"
+                        }
+                    },
+                    "required": ["todo_id"]
+                }
+            ),
+            Tool(
+                name="create_todo",
+                description="Create a new to-do in the To-Do app.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "The to-do name/title"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "The to-do description (optional)"
+                        },
+                        "date_deadline": {
+                            "type": "string",
+                            "description": "Deadline in YYYY-MM-DD format (optional)"
+                        },
+                        "stage": {
+                            "type": "string",
+                            "description": "Stage name, e.g. 'Today', 'This Week', 'Inbox' (optional, defaults to 'Today')",
+                            "default": "Today"
+                        },
+                        "priority": {
+                            "type": "string",
+                            "description": "Priority: '0' for Normal, '1' for High (optional, default: '0')",
+                            "default": "0"
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of tag names (optional)"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            ),
+            Tool(
+                name="update_todo",
+                description="Update an existing to-do.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the to-do to update"
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "New to-do name/title (optional)"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "New description (optional)"
+                        },
+                        "date_deadline": {
+                            "type": "string",
+                            "description": "New deadline in YYYY-MM-DD format (optional)"
+                        },
+                        "stage": {
+                            "type": "string",
+                            "description": "New stage name, e.g. 'Today', 'This Week' (optional)"
+                        },
+                        "priority": {
+                            "type": "string",
+                            "description": "New priority: '0' or '1' (optional)"
+                        }
+                    },
+                    "required": ["todo_id"]
+                }
+            ),
+            Tool(
+                name="mark_todo_done",
+                description="Mark a to-do as done by moving it to the 'Done' stage.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the to-do to mark as done"
+                        }
+                    },
+                    "required": ["todo_id"]
+                }
+            ),
+            Tool(
+                name="delete_todo",
+                description="Delete a to-do permanently.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the to-do to delete"
+                        }
+                    },
+                    "required": ["todo_id"]
+                }
+            ),
+            Tool(
+                name="list_todo_stages",
+                description="List all available to-do stages (Inbox, Today, This Week, This Month, Later, Done, etc.).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {}
+                }
+            ),
         ]
 
     async def call_tool(self, name: str, arguments: Any) -> list[TextContent]:
@@ -1077,6 +1384,38 @@ class OdooMCPServer:
             # Users tools
             elif name == "list_users":
                 return await self.users.list_users(arguments)
+
+            # Activities tools
+            elif name == "list_activities":
+                return await self.activities.list_activities(arguments)
+            elif name == "get_activity":
+                return await self.activities.get_activity(arguments)
+            elif name == "create_activity":
+                return await self.activities.create_activity(arguments)
+            elif name == "update_activity":
+                return await self.activities.update_activity(arguments)
+            elif name == "mark_activity_done":
+                return await self.activities.mark_activity_done(arguments)
+            elif name == "delete_activity":
+                return await self.activities.delete_activity(arguments)
+            elif name == "list_activity_types":
+                return await self.activities.list_activity_types(arguments)
+
+            # To-Do app tools
+            elif name == "list_todos":
+                return await self.todos.list_todos(arguments)
+            elif name == "get_todo":
+                return await self.todos.get_todo(arguments)
+            elif name == "create_todo":
+                return await self.todos.create_todo(arguments)
+            elif name == "update_todo":
+                return await self.todos.update_todo(arguments)
+            elif name == "mark_todo_done":
+                return await self.todos.mark_todo_done(arguments)
+            elif name == "delete_todo":
+                return await self.todos.delete_todo(arguments)
+            elif name == "list_todo_stages":
+                return await self.todos.list_todo_stages(arguments)
 
             else:
                 return [TextContent(type="text", text=f"Unknown tool: {name}")]
