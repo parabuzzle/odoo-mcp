@@ -97,10 +97,19 @@ Add to your Cursor MCP settings.
 - **delete_task**: Permanently delete a task and all its subtasks
 - **archive_task**: Archive a task (hidden from default views but can be restored later)
 
+### Knowledge
+
+- **list_articles**: List knowledge articles with optional filtering by parent ID for hierarchical navigation
+- **get_article**: Get a specific article by ID with full content, metadata, and hierarchy information
+- **create_article**: Create a new knowledge article with optional body content and parent article for organization
+- **update_article**: Update an existing article - modify name, body content, or parent article
+- **delete_article**: Permanently delete a knowledge article
+- **archive_article**: Archive an article (hidden from default views but can be restored later)
+
 ## Supported Apps (Roadmap)
 
 - [x] Projects - interact with projects. Read, create, update, delete, and archive tasks.
-- [ ] Knowledge - interact with knowledge base. Read and update documents.
+- [x] Knowledge - interact with knowledge base. Read, create, update, delete, and archive articles.
 - [ ] Helpdesk - interact with help desk projects. Read and update tickets. Read and send messages with customers.
 - [ ] Contacts - read and update contacts
 
