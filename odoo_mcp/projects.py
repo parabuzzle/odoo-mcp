@@ -187,7 +187,7 @@ class ProjectsHandler(OdooBase):
         # Read task details
         tasks = Task.read(
             task_ids,
-            ["name", "id", "user_ids", "stage_id", "priority", "description", "date_deadline"]
+            ["name", "id", "user_ids", "stage_id", "priority", "description", "date_deadline", "tag_ids"]
         )
 
         # Get project name
@@ -214,12 +214,106 @@ class ProjectsHandler(OdooBase):
             deadline = task.get("date_deadline", "No deadline")
             description = task.get("description") or "No description"
 
+            # Get tags
+            tag_ids = task.get("tag_ids", [])
+            if tag_ids and len(tag_ids) > 0:
+                Tag = self.odoo.env["project.tags"]
+                tag_names = [Tag.read(tag_id, ["name"])[0]["name"] for tag_id in tag_ids]
+                tags_str = ", ".join(tag_names)
+            else:
+                tags_str = "No tags"
+
             output_lines.append(
                 f"## {task['name']} (ID: {task['id']})\n"
                 f"- Stage: {stage}\n"
                 f"- Priority: {priority_str}\n"
                 f"- Assigned to: {assignee_str}\n"
                 f"- Deadline: {deadline}\n"
+                f"- Tags: {tags_str}\n"
+                f"- Description: {description}\n"
+            )
+
+        return [TextContent(type="text", text="\n".join(output_lines))]
+
+    async def search_tasks_by_tag(self, arguments: dict) -> list[TextContent]:
+        """Search for tasks by tag name across all projects."""
+        tag_name = arguments.get("tag_name")
+        limit = arguments.get("limit", 50)
+
+        if not tag_name:
+            return [TextContent(type="text", text="Error: tag_name is required")]
+
+        # Find the tag ID by name
+        Tag = self.odoo.env["project.tags"]
+        tag_ids = Tag.search([("name", "ilike", tag_name)], limit=1)
+
+        if not tag_ids:
+            return [TextContent(type="text", text=f"No tag found with name '{tag_name}'.")]
+
+        tag_id = tag_ids[0]
+        tag_record = Tag.read(tag_id, ["name"])[0]
+        actual_tag_name = tag_record["name"]
+
+        # Search for tasks with this tag
+        Task = self.odoo.env["project.task"]
+        task_ids = Task.search([("tag_ids", "in", [tag_id])], limit=limit)
+
+        if not task_ids:
+            return [TextContent(type="text", text=f"No tasks found with tag '{actual_tag_name}'.")]
+
+        # Read task details
+        tasks = Task.read(
+            task_ids,
+            ["name", "id", "user_ids", "stage_id", "priority", "description", "date_deadline", "tag_ids", "project_id"]
+        )
+
+        # Format output
+        output_lines = [f"# Tasks with Tag: {actual_tag_name}\n"]
+        for task in tasks:
+            # Get project name
+            project_id = task.get("project_id")
+            project_name = project_id[1] if project_id else "Unknown project"
+
+            # Get assignees
+            assignees = task.get("user_ids", [])
+            if assignees and len(assignees) > 0:
+                User = self.odoo.env["res.users"]
+                user_names = [User.read(uid, ["name"])[0]["name"] for uid in assignees]
+                assignee_str = ", ".join(user_names)
+            else:
+                assignee_str = "Unassigned"
+
+            # Get stage
+            stage_id = task.get("stage_id")
+            stage = stage_id[1] if stage_id else "No stage"
+
+            # Get priority
+            priority = task.get("priority", "0")
+            priority_map = {"0": "Normal", "1": "High"}
+            priority_str = priority_map.get(priority, priority)
+
+            # Get deadline
+            deadline = task.get("date_deadline", "No deadline")
+
+            # Get description
+            description = task.get("description") or "No description"
+
+            # Get all tags for this task
+            all_tag_ids = task.get("tag_ids", [])
+            if all_tag_ids and len(all_tag_ids) > 0:
+                tag_names = [Tag.read(tid, ["name"])[0]["name"] for tid in all_tag_ids]
+                tags_str = ", ".join(tag_names)
+            else:
+                tags_str = "No tags"
+
+            output_lines.append(
+                f"## {task['name']} (ID: {task['id']})\n"
+                f"- Project: {project_name}\n"
+                f"- Stage: {stage}\n"
+                f"- Priority: {priority_str}\n"
+                f"- Assigned to: {assignee_str}\n"
+                f"- Deadline: {deadline}\n"
+                f"- Tags: {tags_str}\n"
                 f"- Description: {description}\n"
             )
 

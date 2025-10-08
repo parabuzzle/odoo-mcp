@@ -7,12 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a Model Context Protocol (MCP) server for integrating Odoo cloud apps with LLMs. The MCP allows AI assistants to interact with Odoo's SaaS platform through a standardized protocol.
 
 **Currently Implemented:**
-- **Projects**: Full CRUD on projects and tasks. Create, read, update, archive projects. Create, read, update, delete, archive tasks. Send and read task messages.
-- **Knowledge**: Full CRUD on knowledge articles. Create, read, update, delete, archive articles with hierarchical organization.
-- **Helpdesk**: List teams. Full CRUD on tickets. Create, read, update, close tickets. Send and read ticket messages with HTML support.
-- **Contacts**: Full CRUD on contacts (companies and individuals). List, search, create, read, update, delete, archive contacts. Upload logos from URLs.
-- **Mailing Lists**: Manage email marketing lists. Create, read, update, delete lists. Subscribe/unsubscribe contacts. Manage opt-in/opt-out status.
-- **Users**: List Odoo users for task and ticket assignments.
+- **Projects** (13 tools): Full CRUD on projects and tasks. Create, read, update, archive projects. Create, read, update, delete, archive tasks. Send and read task messages. Search tasks by tag across all projects. Task details include tags.
+- **Knowledge** (6 tools): Full CRUD on knowledge articles. Create, read, update, delete, archive articles with hierarchical organization.
+- **Helpdesk** (8 tools): List teams. Full CRUD on tickets. Create, read, update, close tickets. Send and read ticket messages with HTML support.
+- **Contacts** (7 tools): Full CRUD on contacts (companies and individuals). List, search, create, read, update, delete, archive contacts. Upload logos from URLs.
+- **Mailing Lists** (10 tools): Manage email marketing lists. Create, read, update, delete lists. Subscribe/unsubscribe contacts. Manage opt-in/opt-out status.
+- **Users** (1 tool): List Odoo users for task and ticket assignments.
 
 ## Commands
 
@@ -37,7 +37,14 @@ The server uses stdio transport, so manual testing requires an MCP client like C
 odoo-mcp/
 ├── odoo_mcp/
 │   ├── __init__.py
-│   └── server.py          # Main MCP server implementation
+│   ├── server.py          # Main MCP server (tool registration and routing)
+│   ├── base.py            # Base class with shared Odoo connection logic
+│   ├── projects.py        # Projects and tasks operations (13 tools)
+│   ├── knowledge.py       # Knowledge articles operations (6 tools)
+│   ├── helpdesk.py        # Helpdesk tickets operations (8 tools)
+│   ├── contacts.py        # Contacts/partners operations (7 tools)
+│   ├── mailing.py         # Mailing lists operations (10 tools)
+│   └── users.py           # Users operations (1 tool)
 ├── test_connection.py     # Test script for Odoo connectivity
 ├── pyproject.toml        # Project dependencies
 ├── .env                  # Environment variables (gitignored)
@@ -46,24 +53,46 @@ odoo-mcp/
 
 ## Architecture
 
-### MCP Server (`odoo_mcp/server.py`)
+The codebase follows a modular architecture with separate handler modules for each Odoo app:
 
-The server follows this pattern:
-1. **OdooMCPServer class** - Main server implementation
-2. **Connection management** - `connect_odoo()` initializes the Odoo connection using odoorpc
-3. **Tool registration** - Tools are registered via `@server.list_tools()` and `@server.call_tool()` decorators
-4. **Tool handlers** - Each tool is an async method that:
-   - Connects to Odoo if not already connected
-   - Uses odoorpc to access Odoo models
-   - Searches/reads data from Odoo
-   - Formats results as TextContent
-   - Returns formatted markdown output
+### Base Class (`odoo_mcp/base.py`)
+
+- **OdooBase** - Base class providing shared Odoo connection logic
+- `connect_odoo()` - Initializes the Odoo connection using odoorpc with JSON-RPC over SSL
+- `cleanup()` - Cleanup resources on shutdown
+- All handler classes inherit from OdooBase
+
+### Handler Modules
+
+Each Odoo app has its own handler module inheriting from OdooBase:
+- **ProjectsHandler** (`projects.py`) - 13 tools for projects and tasks
+- **KnowledgeHandler** (`knowledge.py`) - 6 tools for knowledge articles
+- **HelpdeskHandler** (`helpdesk.py`) - 8 tools for helpdesk tickets
+- **ContactsHandler** (`contacts.py`) - 7 tools for contacts/partners
+- **MailingHandler** (`mailing.py`) - 10 tools for mailing lists
+- **UsersHandler** (`users.py`) - 1 tool for users
+
+Each handler:
+- Implements tools as async methods
+- Connects to Odoo via shared odoorpc connection
+- Searches/reads data from Odoo models
+- Formats results as TextContent
+- Returns formatted markdown output
+
+### Main Server (`odoo_mcp/server.py`)
+
+The OdooMCPServer class:
+1. **Initialization** - Creates handler instances for each Odoo app
+2. **Connection sharing** - Establishes Odoo connection and shares it among all handlers
+3. **Tool registration** - Registers all 45 tools via `@server.list_tools()` decorator
+4. **Tool routing** - Routes tool calls to appropriate handlers via `@server.call_tool()` decorator
+5. **Graceful shutdown** - Handles SIGINT/SIGTERM signals and cleans up resources
 
 ### Adding New Tools
 
-To add a new tool:
+To add a new tool to an existing handler:
 
-1. **Add tool definition** in `list_tools()`:
+1. **Add tool definition** in `server.py` `list_tools()`:
 ```python
 Tool(
     name="tool_name",
@@ -81,13 +110,13 @@ Tool(
 )
 ```
 
-2. **Add handler** in `call_tool()`:
+2. **Add handler routing** in `server.py` `call_tool()`:
 ```python
 elif name == "tool_name":
-    return await self.tool_name(arguments)
+    return await self.handler_name.tool_name(arguments)
 ```
 
-3. **Implement method**:
+3. **Implement method** in appropriate handler file (e.g., `projects.py`):
 ```python
 async def tool_name(self, arguments: dict) -> list[TextContent]:
     """Tool implementation."""
@@ -151,6 +180,7 @@ Required in `.env` file:
 
 - `project.project` - Projects
 - `project.task` - Tasks/tickets
+- `project.tags` - Task tags (for categorization and filtering)
 - `helpdesk.ticket` - Helpdesk tickets
 - `helpdesk.team` - Helpdesk teams
 - `res.partner` - Contacts/customers

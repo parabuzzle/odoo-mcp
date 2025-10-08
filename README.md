@@ -95,7 +95,8 @@ Add to your Cursor MCP settings.
 - **create_project**: Create a new project with name and optional description
 - **update_project**: Update an existing project - modify name or description
 - **archive_project**: Archive a project (hidden from default views but can be restored later)
-- **get_project_tasks**: Get all tasks/tickets for a specific project with details like assignees, stages, priorities, and descriptions
+- **get_project_tasks**: Get all tasks/tickets for a specific project with details like assignees, stages, priorities, tags, and descriptions
+- **search_tasks_by_tag**: Search for tasks by tag name across all projects. Returns all tasks with the specified tag regardless of project
 - **create_task**: Create a new task in a project with optional fields like description, assignees (by name or email), stage, priority, deadline, and parent task (for subtasks)
 - **update_task**: Update an existing task - modify name, description, assignees, stage, priority, or deadline
 - **delete_task**: Permanently delete a task and all its subtasks
@@ -166,10 +167,35 @@ The MCP server is built with:
 - `mcp` - Model Context Protocol SDK
 - `odoorpc` - Odoo XML-RPC/JSON-RPC client
 - `python-dotenv` - Environment variable management
+- `requests` - HTTP library for downloading images
 
-Architecture:
-- `odoo_mcp/server.py` - Main MCP server implementation
-- Tools are defined as async methods in the `OdooMCPServer` class
+### Architecture
+
+The codebase follows a modular architecture with separate handler modules for each Odoo app:
+
+```
+odoo-mcp/
+├── odoo_mcp/
+│   ├── __init__.py
+│   ├── server.py          # Main MCP server (tool registration and routing)
+│   ├── base.py            # Base class with shared Odoo connection logic
+│   ├── projects.py        # Projects and tasks operations (13 tools)
+│   ├── knowledge.py       # Knowledge articles operations (6 tools)
+│   ├── helpdesk.py        # Helpdesk tickets operations (8 tools)
+│   ├── contacts.py        # Contacts/partners operations (7 tools)
+│   ├── mailing.py         # Mailing lists operations (10 tools)
+│   └── users.py           # Users operations (1 tool)
+├── test_connection.py     # Test script for Odoo connectivity
+├── pyproject.toml        # Project dependencies
+├── .env                  # Environment variables (gitignored)
+└── README.md
+```
+
+**Design Pattern:**
+- `OdooBase` - Base class providing Odoo connection management and cleanup
+- Handler classes inherit from `OdooBase` and implement operations for each Odoo app
+- `OdooMCPServer` - Main server class that initializes all handlers and routes tool calls
+- Tools are defined as async methods in handler classes
 - Each tool connects to Odoo via `odoorpc` and returns formatted results
 
 ## Contributing

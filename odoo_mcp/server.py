@@ -147,7 +147,7 @@ class OdooMCPServer:
             ),
             Tool(
                 name="get_project_tasks",
-                description="Get tasks/tickets for a specific project. Returns task details including name, status, assignee, and description.",
+                description="Get tasks/tickets for a specific project. Returns task details including name, status, assignee, tags, and description.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -162,6 +162,25 @@ class OdooMCPServer:
                         }
                     },
                     "required": ["project_id"]
+                }
+            ),
+            Tool(
+                name="search_tasks_by_tag",
+                description="Search for tasks by tag name across all projects. Returns all tasks that have the specified tag.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tag_name": {
+                            "type": "string",
+                            "description": "The name of the tag to search for (case-insensitive)"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of tasks to return (default: 50)",
+                            "default": 50
+                        }
+                    },
+                    "required": ["tag_name"]
                 }
             ),
             Tool(
@@ -970,6 +989,8 @@ class OdooMCPServer:
                 return await self.projects.archive_project(arguments)
             elif name == "get_project_tasks":
                 return await self.projects.get_project_tasks(arguments)
+            elif name == "search_tasks_by_tag":
+                return await self.projects.search_tasks_by_tag(arguments)
             elif name == "create_task":
                 return await self.projects.create_task(arguments)
             elif name == "update_task":
