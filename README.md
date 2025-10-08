@@ -106,11 +106,21 @@ Add to your Cursor MCP settings.
 - **delete_article**: Permanently delete a knowledge article
 - **archive_article**: Archive an article (hidden from default views but can be restored later)
 
+### Helpdesk
+
+- **list_tickets**: List helpdesk tickets with optional filtering by team ID
+- **get_ticket**: Get a specific ticket by ID with full details including description and customer information
+- **get_ticket_messages**: Get all messages from a ticket's message thread with authors and content
+- **create_ticket**: Create a new helpdesk ticket with subject, description, customer, and priority
+- **update_ticket**: Update an existing ticket - modify subject, description, stage, priority, or assignment
+- **close_ticket**: Close a ticket by moving it to the closed/done stage
+- **send_ticket_message**: Send a message on a ticket for customer communication or internal notes. **Supports full HTML formatting** including bold (`<strong>`), italic (`<em>`), lists (`<ul>`, `<li>`), links (`<a href="">`), and line breaks (`<br>`). Plain text with newlines will be automatically converted to HTML.
+
 ## Supported Apps (Roadmap)
 
 - [x] Projects - interact with projects. Read, create, update, delete, and archive tasks.
 - [x] Knowledge - interact with knowledge base. Read, create, update, delete, and archive articles.
-- [ ] Helpdesk - interact with help desk projects. Read and update tickets. Read and send messages with customers.
+- [x] Helpdesk - interact with helpdesk. Read, create, update, close tickets. Send messages for customer communication.
 - [ ] Contacts - read and update contacts
 
 ... more to come (or you can open a PR and add what you need!)
