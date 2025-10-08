@@ -1,0 +1,18 @@
+[project]
+name = "odoo-mcp"
+version = "0.1.0"
+description = "Model Context Protocol server for Odoo cloud apps"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "odoorpc>=0.10.0",
+    "python-dotenv>=1.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+odoo-mcp = "odoo_mcp.server:main"
