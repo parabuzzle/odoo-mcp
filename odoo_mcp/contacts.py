@@ -1,0 +1,368 @@
+"""Contacts handler for Odoo MCP."""
+
+import base64
+import requests
+from mcp.types import TextContent
+from .base import OdooBase
+
+
+class ContactsHandler(OdooBase):
+    """Handler for contact operations."""
+
+    async def list_contacts(self, arguments: dict) -> list[TextContent]:
+        """List contacts."""
+        limit = arguments.get("limit", 50)
+        is_company = arguments.get("is_company")
+
+        # Access res.partner model
+        Partner = self.odoo.env["res.partner"]
+
+        # Build search domain
+        domain = []
+        if is_company is not None:
+            domain.append(("is_company", "=", is_company))
+
+        # Search for contacts
+        contact_ids = Partner.search(domain, limit=limit)
+
+        if not contact_ids:
+            return [TextContent(type="text", text="No contacts found.")]
+
+        # Read contact details
+        contacts = Partner.read(
+            contact_ids,
+            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id", "active"]
+        )
+
+        # Format output
+        output_lines = ["# Contacts\n"]
+        for contact in contacts:
+            contact_type = "Company" if contact.get("is_company") else "Individual"
+            email = contact.get("email") or "No email"
+            phone = contact.get("phone") or contact.get("mobile") or "No phone"
+            parent_id = contact.get("parent_id")
+            parent = parent_id[1] if parent_id else "No parent company"
+            active = "Active" if contact.get("active", True) else "Archived"
+
+            output_lines.append(
+                f"## {contact['name']} (ID: {contact['id']})\n"
+                f"- Type: {contact_type}\n"
+                f"- Status: {active}\n"
+                f"- Email: {email}\n"
+                f"- Phone: {phone}\n"
+            )
+            if not contact.get("is_company"):
+                output_lines.append(f"- Company: {parent}\n")
+            output_lines.append("")
+
+        return [TextContent(type="text", text="\n".join(output_lines))]
+
+    async def get_contact(self, arguments: dict) -> list[TextContent]:
+        """Get a specific contact with full details."""
+        contact_id = arguments.get("contact_id")
+
+        if not contact_id:
+            return [TextContent(type="text", text="Error: contact_id is required")]
+
+        # Access res.partner model
+        Partner = self.odoo.env["res.partner"]
+
+        # Read contact with full details
+        contact = Partner.read(
+            contact_id,
+            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id",
+             "street", "street2", "city", "zip", "country_id", "active"]
+        )[0]
+
+        contact_type = "Company" if contact.get("is_company") else "Individual"
+        email = contact.get("email") or "No email"
+        phone = contact.get("phone") or "No phone"
+        mobile = contact.get("mobile") or "No mobile"
+        parent_id = contact.get("parent_id")
+        parent = parent_id[1] if parent_id else "No parent company"
+        active = "Active" if contact.get("active", True) else "Archived"
+
+        # Format address
+        address_parts = []
+        if contact.get("street"):
+            address_parts.append(contact["street"])
+        if contact.get("street2"):
+            address_parts.append(contact["street2"])
+        city_line = []
+        if contact.get("city"):
+            city_line.append(contact["city"])
+        if contact.get("zip"):
+            city_line.append(contact["zip"])
+        if city_line:
+            address_parts.append(", ".join(city_line))
+        country_id = contact.get("country_id")
+        if country_id:
+            address_parts.append(country_id[1])
+        address = "\n".join(address_parts) if address_parts else "No address"
+
+        output = (
+            f"# {contact['name']}\n\n"
+            f"**ID:** {contact['id']}  \n"
+            f"**Type:** {contact_type}  \n"
+            f"**Status:** {active}  \n"
+            f"**Email:** {email}  \n"
+            f"**Phone:** {phone}  \n"
+            f"**Mobile:** {mobile}  \n"
+        )
+        if not contact.get("is_company"):
+            output += f"**Company:** {parent}  \n"
+        output += f"\n## Address\n\n{address}"
+
+        return [TextContent(type="text", text=output)]
+
+    async def search_contacts(self, arguments: dict) -> list[TextContent]:
+        """Search contacts by name, email, or company."""
+        query = arguments.get("query")
+        limit = arguments.get("limit", 50)
+
+        if not query:
+            return [TextContent(type="text", text="Error: query is required")]
+
+        # Access res.partner model
+        Partner = self.odoo.env["res.partner"]
+
+        # Build search domain using OR conditions
+        # Search in name, email, and parent company name
+        domain = [
+            '|', '|',
+            ('name', 'ilike', query),
+            ('email', 'ilike', query),
+            ('parent_id.name', 'ilike', query)
+        ]
+
+        # Search for contacts
+        contact_ids = Partner.search(domain, limit=limit)
+
+        if not contact_ids:
+            return [TextContent(type="text", text=f"No contacts found matching '{query}'.")]
+
+        # Read contact details
+        contacts = Partner.read(
+            contact_ids,
+            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id", "active"]
+        )
+
+        # Format output
+        output_lines = [f"# Search Results for '{query}'\n\nFound {len(contacts)} contact(s):\n"]
+        for contact in contacts:
+            contact_type = "Company" if contact.get("is_company") else "Individual"
+            email = contact.get("email") or "No email"
+            phone = contact.get("phone") or contact.get("mobile") or "No phone"
+            parent_id = contact.get("parent_id")
+            parent = parent_id[1] if parent_id else "No parent company"
+            active = "Active" if contact.get("active", True) else "Archived"
+
+            output_lines.append(
+                f"## {contact['name']} (ID: {contact['id']})\n"
+                f"- Type: {contact_type}\n"
+                f"- Status: {active}\n"
+                f"- Email: {email}\n"
+                f"- Phone: {phone}\n"
+            )
+            if not contact.get("is_company"):
+                output_lines.append(f"- Company: {parent}\n")
+            output_lines.append("")
+
+        return [TextContent(type="text", text="\n".join(output_lines))]
+
+    async def create_contact(self, arguments: dict) -> list[TextContent]:
+        """Create a new contact."""
+        name = arguments.get("name")
+
+        if not name:
+            return [TextContent(type="text", text="Error: name is required")]
+
+        # Build contact values
+        contact_values = {
+            "name": name,
+        }
+
+        # Add optional fields
+        if "email" in arguments and arguments["email"]:
+            contact_values["email"] = arguments["email"]
+
+        if "phone" in arguments and arguments["phone"]:
+            contact_values["phone"] = arguments["phone"]
+
+        if "mobile" in arguments and arguments["mobile"]:
+            contact_values["mobile"] = arguments["mobile"]
+
+        if "is_company" in arguments:
+            contact_values["is_company"] = arguments["is_company"]
+
+        if "parent_id" in arguments and arguments["parent_id"]:
+            contact_values["parent_id"] = arguments["parent_id"]
+
+        if "street" in arguments and arguments["street"]:
+            contact_values["street"] = arguments["street"]
+
+        if "street2" in arguments and arguments["street2"]:
+            contact_values["street2"] = arguments["street2"]
+
+        if "city" in arguments and arguments["city"]:
+            contact_values["city"] = arguments["city"]
+
+        if "zip" in arguments and arguments["zip"]:
+            contact_values["zip"] = arguments["zip"]
+
+        if "country_id" in arguments and arguments["country_id"]:
+            contact_values["country_id"] = arguments["country_id"]
+
+        # Handle image upload
+        if "image_url" in arguments and arguments["image_url"]:
+            image_url = arguments["image_url"]
+            try:
+                # Download the image
+                response = requests.get(image_url, timeout=10)
+                response.raise_for_status()
+
+                # Convert to base64
+                image_base64 = base64.b64encode(response.content).decode('utf-8')
+                contact_values["image_1920"] = image_base64
+            except Exception as e:
+                return [TextContent(type="text", text=f"Error downloading image: {str(e)}")]
+
+        # Create the contact
+        Partner = self.odoo.env["res.partner"]
+        new_contact_id = Partner.create(contact_values)
+
+        # Read the created contact to return details
+        contact = Partner.read(new_contact_id, ["name", "id", "email", "is_company"])[0]
+
+        contact_type = "Company" if contact.get("is_company") else "Individual"
+        email = contact.get("email") or "No email"
+
+        output = (
+            f"# Contact Created Successfully\n\n"
+            f"**{contact['name']}** (ID: {contact['id']})\n"
+            f"- Type: {contact_type}\n"
+            f"- Email: {email}\n"
+        )
+
+        if "image_1920" in contact_values:
+            output += "- Logo: Uploaded\n"
+
+        return [TextContent(type="text", text=output)]
+
+    async def update_contact(self, arguments: dict) -> list[TextContent]:
+        """Update an existing contact."""
+        contact_id = arguments.get("contact_id")
+
+        if not contact_id:
+            return [TextContent(type="text", text="Error: contact_id is required")]
+
+        # Build update values
+        update_values = {}
+
+        if "name" in arguments and arguments["name"]:
+            update_values["name"] = arguments["name"]
+
+        if "email" in arguments:
+            update_values["email"] = arguments["email"]
+
+        if "phone" in arguments:
+            update_values["phone"] = arguments["phone"]
+
+        if "mobile" in arguments:
+            update_values["mobile"] = arguments["mobile"]
+
+        if "street" in arguments:
+            update_values["street"] = arguments["street"]
+
+        if "street2" in arguments:
+            update_values["street2"] = arguments["street2"]
+
+        if "city" in arguments:
+            update_values["city"] = arguments["city"]
+
+        if "zip" in arguments:
+            update_values["zip"] = arguments["zip"]
+
+        # Handle image upload
+        if "image_url" in arguments and arguments["image_url"]:
+            image_url = arguments["image_url"]
+            try:
+                # Download the image
+                response = requests.get(image_url, timeout=10)
+                response.raise_for_status()
+
+                # Convert to base64
+                image_base64 = base64.b64encode(response.content).decode('utf-8')
+                update_values["image_1920"] = image_base64
+            except Exception as e:
+                return [TextContent(type="text", text=f"Error downloading image: {str(e)}")]
+
+        if not update_values:
+            return [TextContent(type="text", text="Error: No fields to update provided")]
+
+        # Update the contact
+        Partner = self.odoo.env["res.partner"]
+        Partner.write(contact_id, update_values)
+
+        # Read the updated contact to return details
+        contact = Partner.read(contact_id, ["name", "id", "email", "phone", "mobile"])[0]
+
+        email = contact.get("email") or "No email"
+        phone = contact.get("phone") or "No phone"
+        mobile = contact.get("mobile") or "No mobile"
+
+        output = (
+            f"# Contact Updated Successfully\n\n"
+            f"**{contact['name']}** (ID: {contact['id']})\n"
+            f"- Email: {email}\n"
+            f"- Phone: {phone}\n"
+            f"- Mobile: {mobile}\n"
+        )
+
+        if "image_1920" in update_values:
+            output += "- Logo: Updated\n"
+
+        return [TextContent(type="text", text=output)]
+
+    async def delete_contact(self, arguments: dict) -> list[TextContent]:
+        """Delete a contact permanently."""
+        contact_id = arguments.get("contact_id")
+
+        if not contact_id:
+            return [TextContent(type="text", text="Error: contact_id is required")]
+
+        # Get contact details before deletion
+        Partner = self.odoo.env["res.partner"]
+        contact = Partner.read(contact_id, ["name", "id"])[0]
+        contact_name = contact["name"]
+
+        # Delete the contact
+        Partner.unlink(contact_id)
+
+        output = (
+            f"# Contact Deleted Successfully\n\n"
+            f"Contact **{contact_name}** (ID: {contact_id}) has been permanently deleted."
+        )
+
+        return [TextContent(type="text", text=output)]
+
+    async def archive_contact(self, arguments: dict) -> list[TextContent]:
+        """Archive a contact."""
+        contact_id = arguments.get("contact_id")
+
+        if not contact_id:
+            return [TextContent(type="text", text="Error: contact_id is required")]
+
+        # Archive the contact by setting active=False
+        Partner = self.odoo.env["res.partner"]
+        Partner.write(contact_id, {"active": False})
+
+        # Read the archived contact to return details
+        contact = Partner.read(contact_id, ["name", "id"])[0]
+
+        output = (
+            f"# Contact Archived Successfully\n\n"
+            f"Contact **{contact['name']}** (ID: {contact['id']}) has been archived."
+        )
+
+        return [TextContent(type="text", text=output)]
