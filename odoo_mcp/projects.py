@@ -187,7 +187,8 @@ class ProjectsHandler(OdooBase):
         # Read task details
         tasks = Task.read(
             task_ids,
-            ["name", "id", "user_ids", "stage_id", "priority", "description", "date_deadline", "tag_ids"]
+            ["name", "id", "user_ids", "stage_id", "priority", "description", "date_deadline", "tag_ids",
+             "partner_id", "kanban_state", "date_assign", "child_ids", "subtask_count"]
         )
 
         # Get project name
@@ -223,12 +224,31 @@ class ProjectsHandler(OdooBase):
             else:
                 tags_str = "No tags"
 
+            # Get customer/partner
+            partner_id = task.get("partner_id")
+            customer = partner_id[1] if partner_id else "No customer"
+
+            # Get kanban state
+            kanban_state = task.get("kanban_state", "normal")
+            kanban_map = {"normal": "Ready", "blocked": "Blocked", "done": "Done"}
+            kanban_str = kanban_map.get(kanban_state, kanban_state)
+
+            # Get date assigned
+            date_assign = task.get("date_assign", "Not assigned")
+
+            # Get subtask count
+            subtask_count = task.get("subtask_count", 0)
+
             output_lines.append(
                 f"## {task['name']} (ID: {task['id']})\n"
                 f"- Stage: {stage}\n"
+                f"- Kanban State: {kanban_str}\n"
                 f"- Priority: {priority_str}\n"
                 f"- Assigned to: {assignee_str}\n"
+                f"- Date Assigned: {date_assign}\n"
+                f"- Customer: {customer}\n"
                 f"- Deadline: {deadline}\n"
+                f"- Subtasks: {subtask_count}\n"
                 f"- Tags: {tags_str}\n"
                 f"- Description: {description}\n"
             )
@@ -264,7 +284,8 @@ class ProjectsHandler(OdooBase):
         # Read task details
         tasks = Task.read(
             task_ids,
-            ["name", "id", "user_ids", "stage_id", "priority", "description", "date_deadline", "tag_ids", "project_id"]
+            ["name", "id", "user_ids", "stage_id", "priority", "description", "date_deadline", "tag_ids", "project_id",
+             "partner_id", "kanban_state", "date_assign", "subtask_count"]
         )
 
         # Format output
@@ -306,13 +327,32 @@ class ProjectsHandler(OdooBase):
             else:
                 tags_str = "No tags"
 
+            # Get customer/partner
+            partner_id = task.get("partner_id")
+            customer = partner_id[1] if partner_id else "No customer"
+
+            # Get kanban state
+            kanban_state = task.get("kanban_state", "normal")
+            kanban_map = {"normal": "Ready", "blocked": "Blocked", "done": "Done"}
+            kanban_str = kanban_map.get(kanban_state, kanban_state)
+
+            # Get date assigned
+            date_assign = task.get("date_assign", "Not assigned")
+
+            # Get subtask count
+            subtask_count = task.get("subtask_count", 0)
+
             output_lines.append(
                 f"## {task['name']} (ID: {task['id']})\n"
                 f"- Project: {project_name}\n"
                 f"- Stage: {stage}\n"
+                f"- Kanban State: {kanban_str}\n"
                 f"- Priority: {priority_str}\n"
                 f"- Assigned to: {assignee_str}\n"
+                f"- Date Assigned: {date_assign}\n"
+                f"- Customer: {customer}\n"
                 f"- Deadline: {deadline}\n"
+                f"- Subtasks: {subtask_count}\n"
                 f"- Tags: {tags_str}\n"
                 f"- Description: {description}\n"
             )
@@ -400,6 +440,14 @@ class ProjectsHandler(OdooBase):
         if "parent_id" in arguments and arguments["parent_id"]:
             task_values["parent_id"] = arguments["parent_id"]
 
+        # Handle customer/partner
+        if "partner_id" in arguments and arguments["partner_id"]:
+            task_values["partner_id"] = arguments["partner_id"]
+
+        # Handle kanban state
+        if "kanban_state" in arguments:
+            task_values["kanban_state"] = arguments["kanban_state"]
+
         # Create the task
         Task = self.odoo.env["project.task"]
         new_task_id = Task.create(task_values)
@@ -472,6 +520,14 @@ class ProjectsHandler(OdooBase):
         # Handle deadline
         if "deadline" in arguments:
             update_values["date_deadline"] = arguments["deadline"] if arguments["deadline"] else False
+
+        # Handle customer/partner
+        if "partner_id" in arguments:
+            update_values["partner_id"] = arguments["partner_id"] if arguments["partner_id"] else False
+
+        # Handle kanban state
+        if "kanban_state" in arguments:
+            update_values["kanban_state"] = arguments["kanban_state"]
 
         if not update_values:
             return [TextContent(type="text", text="Error: No fields to update provided")]

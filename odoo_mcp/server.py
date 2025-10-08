@@ -228,6 +228,15 @@ class OdooMCPServer:
                         "parent_id": {
                             "type": "integer",
                             "description": "Parent task ID to create this as a subtask (optional)"
+                        },
+                        "partner_id": {
+                            "type": "integer",
+                            "description": "Customer/partner contact ID (optional)"
+                        },
+                        "kanban_state": {
+                            "type": "string",
+                            "enum": ["normal", "blocked", "done"],
+                            "description": "Kanban state: normal=Ready, blocked=Blocked, done=Done (optional, default: normal)"
                         }
                     },
                     "required": ["project_id", "name"]
@@ -268,6 +277,15 @@ class OdooMCPServer:
                         "deadline": {
                             "type": "string",
                             "description": "New deadline in YYYY-MM-DD format (optional)"
+                        },
+                        "partner_id": {
+                            "type": "integer",
+                            "description": "New customer/partner contact ID (optional). Pass 0 or null to clear."
+                        },
+                        "kanban_state": {
+                            "type": "string",
+                            "enum": ["normal", "blocked", "done"],
+                            "description": "New kanban state: normal=Ready, blocked=Blocked, done=Done (optional)"
                         }
                     },
                     "required": ["task_id"]
@@ -518,6 +536,20 @@ class OdooMCPServer:
                             "type": "string",
                             "enum": ["0", "1", "2", "3"],
                             "description": "Ticket priority: 0=Low, 1=Normal, 2=High, 3=Urgent (optional, default: 1)"
+                        },
+                        "tag_ids": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "description": "List of tag IDs to assign to the ticket (optional)"
+                        },
+                        "ticket_type_id": {
+                            "type": "integer",
+                            "description": "Ticket type/category ID (optional)"
+                        },
+                        "kanban_state": {
+                            "type": "string",
+                            "enum": ["normal", "blocked", "done"],
+                            "description": "Kanban state: normal=Ready, blocked=Blocked, done=Done (optional, default: normal)"
                         }
                     },
                     "required": ["name", "team_id"]
@@ -553,6 +585,24 @@ class OdooMCPServer:
                         "user_id": {
                             "type": "integer",
                             "description": "New assigned user ID (optional)"
+                        },
+                        "partner_id": {
+                            "type": "integer",
+                            "description": "New customer/partner ID (optional). Pass 0 or null to clear."
+                        },
+                        "tag_ids": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "description": "List of tag IDs to assign to the ticket (optional). Pass empty array to clear all tags."
+                        },
+                        "ticket_type_id": {
+                            "type": "integer",
+                            "description": "New ticket type/category ID (optional). Pass 0 or null to clear."
+                        },
+                        "kanban_state": {
+                            "type": "string",
+                            "enum": ["normal", "blocked", "done"],
+                            "description": "New kanban state: normal=Ready, blocked=Blocked, done=Done (optional)"
                         }
                     },
                     "required": ["ticket_id"]

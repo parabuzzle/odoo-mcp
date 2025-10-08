@@ -95,10 +95,10 @@ Add to your Cursor MCP settings.
 - **create_project**: Create a new project with name and optional description
 - **update_project**: Update an existing project - modify name or description
 - **archive_project**: Archive a project (hidden from default views but can be restored later)
-- **get_project_tasks**: Get all tasks/tickets for a specific project with details like assignees, stages, priorities, tags, and descriptions
-- **search_tasks_by_tag**: Search for tasks by tag name across all projects. Returns all tasks with the specified tag regardless of project
-- **create_task**: Create a new task in a project with optional fields like description, assignees (by name or email), stage, priority, deadline, and parent task (for subtasks)
-- **update_task**: Update an existing task - modify name, description, assignees, stage, priority, or deadline
+- **get_project_tasks**: Get all tasks/tickets for a specific project with comprehensive details including assignees, customer, stages, kanban state (Ready/Blocked/Done), priorities, tags, deadlines, date assigned, subtask count, and descriptions
+- **search_tasks_by_tag**: Search for tasks by tag name across all projects. Returns all tasks with the specified tag with full details including customer, kanban state, date assigned, and subtask count
+- **create_task**: Create a new task in a project with comprehensive field support including description, assignees (by name or email), customer/partner, stage, kanban state, priority, deadline, and parent task (for subtasks)
+- **update_task**: Update an existing task - modify any field including name, description, assignees, customer/partner, stage, kanban state, priority, or deadline
 - **delete_task**: Permanently delete a task and all its subtasks
 - **archive_task**: Archive a task (hidden from default views but can be restored later)
 - **send_task_message**: Send a message on a task for comments, discussions, or internal notes. **Supports full HTML formatting** including bold (`<strong>`), italic (`<em>`), lists (`<ul>`, `<li>`), links (`<a href="">`), and line breaks (`<br>`). Plain text with newlines will be automatically converted to HTML.
@@ -116,11 +116,11 @@ Add to your Cursor MCP settings.
 ### Helpdesk
 
 - **list_helpdesk_teams**: List all helpdesk teams with names, IDs, ticket counts, and configuration details
-- **list_tickets**: List helpdesk tickets with optional filtering by team ID
-- **get_ticket**: Get a specific ticket by ID with full details including description and customer information
+- **list_tickets**: List helpdesk tickets with optional filtering by team ID. Returns comprehensive details including customer contact info (name, email, phone), tags, ticket type, kanban state (Ready/Blocked/Done), SLA deadline, priority, and assignment
+- **get_ticket**: Get a specific ticket by ID with full details including customer contact information (name, email, phone), description, tags, ticket type, kanban state, SLA deadline, and assignment
 - **get_ticket_messages**: Get all messages from a ticket's message thread with authors and content
-- **create_ticket**: Create a new helpdesk ticket with subject, description, customer, and priority
-- **update_ticket**: Update an existing ticket - modify subject, description, stage, priority, or assignment
+- **create_ticket**: Create a new helpdesk ticket with comprehensive field support including subject, description, customer, priority, tags, ticket type, and kanban state
+- **update_ticket**: Update an existing ticket - modify any field including subject, description, customer, stage, priority, assignment, tags, ticket type, or kanban state
 - **close_ticket**: Close a ticket by moving it to the closed/done stage
 - **send_ticket_message**: Send a message on a ticket for customer communication or internal notes. **Supports full HTML formatting** including bold (`<strong>`), italic (`<em>`), lists (`<ul>`, `<li>`), links (`<a href="">`), and line breaks (`<br>`). Plain text with newlines will be automatically converted to HTML.
 

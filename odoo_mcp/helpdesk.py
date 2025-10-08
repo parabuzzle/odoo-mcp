@@ -66,14 +66,17 @@ class HelpdeskHandler(OdooBase):
         # Read ticket details
         tickets = Ticket.read(
             ticket_ids,
-            ["name", "id", "partner_id", "user_id", "stage_id", "priority", "create_date"]
+            ["name", "id", "partner_id", "partner_name", "partner_email", "partner_phone", "user_id", "stage_id",
+             "priority", "create_date", "tag_ids", "sla_deadline", "ticket_type_id", "kanban_state"]
         )
 
         # Format output
         output_lines = ["# Helpdesk Tickets\n"]
         for ticket in tickets:
             partner_id = ticket.get("partner_id")
-            customer = partner_id[1] if partner_id else "No customer"
+            customer = partner_id[1] if partner_id else ticket.get("partner_name", "No customer")
+            partner_email = ticket.get("partner_email", "No email")
+            partner_phone = ticket.get("partner_phone", "No phone")
 
             user_id = ticket.get("user_id")
             assigned = user_id[1] if user_id else "Unassigned"
@@ -87,11 +90,38 @@ class HelpdeskHandler(OdooBase):
 
             create_date = ticket.get("create_date", "Unknown")
 
+            # Get tags
+            tag_ids = ticket.get("tag_ids", [])
+            if tag_ids and len(tag_ids) > 0:
+                Tag = self.odoo.env["helpdesk.tag"]
+                tag_names = [Tag.read(tag_id, ["name"])[0]["name"] for tag_id in tag_ids]
+                tags_str = ", ".join(tag_names)
+            else:
+                tags_str = "No tags"
+
+            # Get SLA deadline
+            sla_deadline = ticket.get("sla_deadline", "No SLA")
+
+            # Get ticket type
+            ticket_type_id = ticket.get("ticket_type_id")
+            ticket_type = ticket_type_id[1] if ticket_type_id else "No type"
+
+            # Get kanban state
+            kanban_state = ticket.get("kanban_state", "normal")
+            kanban_map = {"normal": "Ready", "blocked": "Blocked", "done": "Done"}
+            kanban_str = kanban_map.get(kanban_state, kanban_state)
+
             output_lines.append(
                 f"## {ticket['name']} (ID: {ticket['id']})\n"
                 f"- Customer: {customer}\n"
+                f"- Email: {partner_email}\n"
+                f"- Phone: {partner_phone}\n"
                 f"- Stage: {stage}\n"
+                f"- Kanban State: {kanban_str}\n"
                 f"- Priority: {priority_str}\n"
+                f"- Type: {ticket_type}\n"
+                f"- Tags: {tags_str}\n"
+                f"- SLA Deadline: {sla_deadline}\n"
                 f"- Assigned to: {assigned}\n"
                 f"- Created: {create_date}\n"
             )
@@ -111,12 +141,15 @@ class HelpdeskHandler(OdooBase):
         # Read ticket with full details
         ticket = Ticket.read(
             ticket_id,
-            ["name", "id", "description", "partner_id", "user_id", "stage_id",
-             "priority", "create_date", "team_id"]
+            ["name", "id", "description", "partner_id", "partner_name", "partner_email", "partner_phone",
+             "user_id", "stage_id", "priority", "create_date", "team_id", "tag_ids", "sla_deadline",
+             "ticket_type_id", "kanban_state"]
         )[0]
 
         partner_id = ticket.get("partner_id")
-        customer = partner_id[1] if partner_id else "No customer"
+        customer = partner_id[1] if partner_id else ticket.get("partner_name", "No customer")
+        partner_email = ticket.get("partner_email", "No email")
+        partner_phone = ticket.get("partner_phone", "No phone")
 
         user_id = ticket.get("user_id")
         assigned = user_id[1] if user_id else "Unassigned"
@@ -134,13 +167,40 @@ class HelpdeskHandler(OdooBase):
         create_date = ticket.get("create_date", "Unknown")
         description = ticket.get("description") or "No description"
 
+        # Get tags
+        tag_ids = ticket.get("tag_ids", [])
+        if tag_ids and len(tag_ids) > 0:
+            Tag = self.odoo.env["helpdesk.tag"]
+            tag_names = [Tag.read(tag_id, ["name"])[0]["name"] for tag_id in tag_ids]
+            tags_str = ", ".join(tag_names)
+        else:
+            tags_str = "No tags"
+
+        # Get SLA deadline
+        sla_deadline = ticket.get("sla_deadline", "No SLA")
+
+        # Get ticket type
+        ticket_type_id = ticket.get("ticket_type_id")
+        ticket_type = ticket_type_id[1] if ticket_type_id else "No type"
+
+        # Get kanban state
+        kanban_state = ticket.get("kanban_state", "normal")
+        kanban_map = {"normal": "Ready", "blocked": "Blocked", "done": "Done"}
+        kanban_str = kanban_map.get(kanban_state, kanban_state)
+
         output = (
             f"# {ticket['name']}\n\n"
             f"**ID:** {ticket['id']}  \n"
             f"**Customer:** {customer}  \n"
+            f"**Email:** {partner_email}  \n"
+            f"**Phone:** {partner_phone}  \n"
             f"**Team:** {team}  \n"
             f"**Stage:** {stage}  \n"
+            f"**Kanban State:** {kanban_str}  \n"
             f"**Priority:** {priority_str}  \n"
+            f"**Type:** {ticket_type}  \n"
+            f"**Tags:** {tags_str}  \n"
+            f"**SLA Deadline:** {sla_deadline}  \n"
             f"**Assigned to:** {assigned}  \n"
             f"**Created:** {create_date}\n\n"
             f"## Description\n\n{description}"
@@ -171,6 +231,18 @@ class HelpdeskHandler(OdooBase):
 
         if "priority" in arguments:
             ticket_values["priority"] = arguments["priority"]
+
+        # Handle tags
+        if "tag_ids" in arguments and arguments["tag_ids"]:
+            ticket_values["tag_ids"] = [(6, 0, arguments["tag_ids"])]  # Odoo many2many replace syntax
+
+        # Handle ticket type
+        if "ticket_type_id" in arguments and arguments["ticket_type_id"]:
+            ticket_values["ticket_type_id"] = arguments["ticket_type_id"]
+
+        # Handle kanban state
+        if "kanban_state" in arguments:
+            ticket_values["kanban_state"] = arguments["kanban_state"]
 
         # Create the ticket
         Ticket = self.odoo.env["helpdesk.ticket"]
@@ -218,6 +290,22 @@ class HelpdeskHandler(OdooBase):
 
         if "user_id" in arguments:
             update_values["user_id"] = arguments["user_id"]
+
+        # Handle partner/customer
+        if "partner_id" in arguments:
+            update_values["partner_id"] = arguments["partner_id"] if arguments["partner_id"] else False
+
+        # Handle tags
+        if "tag_ids" in arguments:
+            update_values["tag_ids"] = [(6, 0, arguments["tag_ids"])] if arguments["tag_ids"] else [(5, 0, 0)]
+
+        # Handle ticket type
+        if "ticket_type_id" in arguments:
+            update_values["ticket_type_id"] = arguments["ticket_type_id"] if arguments["ticket_type_id"] else False
+
+        # Handle kanban state
+        if "kanban_state" in arguments:
+            update_values["kanban_state"] = arguments["kanban_state"]
 
         if not update_values:
             return [TextContent(type="text", text="Error: No fields to update provided")]

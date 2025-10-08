@@ -7,10 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a Model Context Protocol (MCP) server for integrating Odoo cloud apps with LLMs. The MCP allows AI assistants to interact with Odoo's SaaS platform through a standardized protocol.
 
 **Currently Implemented:**
-- **Projects** (13 tools): Full CRUD on projects and tasks. Create, read, update, archive projects. Create, read, update, delete, archive tasks. Send and read task messages. Search tasks by tag across all projects. Task details include tags.
+- **Projects** (13 tools): Full CRUD on projects and tasks. Create, read, update, archive projects. Create, read, update, delete, archive tasks. Send and read task messages. Search tasks by tag across all projects. Task details include comprehensive fields: assignees, customer/partner, stage, kanban state, priority, tags, deadlines, date assigned, subtask count, and descriptions.
 - **Knowledge** (6 tools): Full CRUD on knowledge articles. Create, read, update, delete, archive articles with hierarchical organization.
-- **Helpdesk** (8 tools): List teams. Full CRUD on tickets. Create, read, update, close tickets. Send and read ticket messages with HTML support.
-- **Contacts** (7 tools): Full CRUD on contacts (companies and individuals). List, search, create, read, update, delete, archive contacts. Upload logos from URLs.
+- **Helpdesk** (8 tools): List teams. Full CRUD on tickets. Create, read, update, close tickets. Send and read ticket messages with HTML support. Ticket details include comprehensive fields: customer contact info (name, email, phone), stage, kanban state, priority, ticket type, tags, SLA deadline, and assignment.
+- **Contacts** (8 tools): Full CRUD on contacts (companies and individuals). List, search by name/email/company, search by tag, create, read, update, delete, archive contacts. Upload logos from URLs. Comprehensive field support including website, VAT/tax ID, title, job function, internal reference, address, state/province, country, tags, and internal notes.
 - **Mailing Lists** (10 tools): Manage email marketing lists. Create, update, delete lists. Subscribe/unsubscribe contacts. Manage opt-in/opt-out status.
 - **Users** (1 tool): List Odoo users for task and ticket assignments.
 - **Activities** (7 tools): Manage scheduled follow-ups and activities. List, create, update, mark done, delete activities. List activity types. Activities can be linked to any Odoo record.
@@ -72,7 +72,7 @@ Each Odoo app has its own handler module inheriting from OdooBase:
 - **ProjectsHandler** (`projects.py`) - 13 tools for projects and tasks
 - **KnowledgeHandler** (`knowledge.py`) - 6 tools for knowledge articles
 - **HelpdeskHandler** (`helpdesk.py`) - 8 tools for helpdesk tickets
-- **ContactsHandler** (`contacts.py`) - 7 tools for contacts/partners
+- **ContactsHandler** (`contacts.py`) - 8 tools for contacts/partners
 - **MailingHandler** (`mailing.py`) - 10 tools for mailing lists
 - **UsersHandler** (`users.py`) - 1 tool for users
 - **ActivitiesHandler** (`activities.py`) - 7 tools for activities/scheduled follow-ups
@@ -90,7 +90,7 @@ Each handler:
 The OdooMCPServer class:
 1. **Initialization** - Creates handler instances for each Odoo app
 2. **Connection sharing** - Establishes Odoo connection and shares it among all handlers
-3. **Tool registration** - Registers all 59 tools via `@server.list_tools()` decorator
+3. **Tool registration** - Registers all 60 tools via `@server.list_tools()` decorator
 4. **Tool routing** - Routes tool calls to appropriate handlers via `@server.call_tool()` decorator
 5. **Graceful shutdown** - Handles SIGINT/SIGTERM signals and cleans up resources
 
