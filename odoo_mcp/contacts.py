@@ -31,7 +31,7 @@ class ContactsHandler(OdooBase):
         # Read contact details
         contacts = Partner.read(
             contact_ids,
-            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id", "active"]
+            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id", "active", "category_id"]
         )
 
         # Format output
@@ -44,6 +44,15 @@ class ContactsHandler(OdooBase):
             parent = parent_id[1] if parent_id else "No parent company"
             active = "Active" if contact.get("active", True) else "Archived"
 
+            # Get tags
+            category_ids = contact.get("category_id", [])
+            if category_ids:
+                Category = self.odoo.env["res.partner.category"]
+                categories = Category.read(category_ids, ["name"])
+                tags = ", ".join([cat["name"] for cat in categories])
+            else:
+                tags = None
+
             output_lines.append(
                 f"## {contact['name']} (ID: {contact['id']})\n"
                 f"- Type: {contact_type}\n"
@@ -53,6 +62,8 @@ class ContactsHandler(OdooBase):
             )
             if not contact.get("is_company"):
                 output_lines.append(f"- Company: {parent}\n")
+            if tags:
+                output_lines.append(f"- Tags: {tags}\n")
             output_lines.append("")
 
         return [TextContent(type="text", text="\n".join(output_lines))]
@@ -70,17 +81,36 @@ class ContactsHandler(OdooBase):
         # Read contact with full details
         contact = Partner.read(
             contact_id,
-            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id",
-             "street", "street2", "city", "zip", "country_id", "active"]
+            ["name", "id", "email", "phone", "mobile", "website", "is_company", "parent_id",
+             "street", "street2", "city", "state_id", "zip", "country_id", "active",
+             "category_id", "comment", "vat", "title", "function", "ref"]
         )[0]
 
         contact_type = "Company" if contact.get("is_company") else "Individual"
         email = contact.get("email") or "No email"
         phone = contact.get("phone") or "No phone"
         mobile = contact.get("mobile") or "No mobile"
+        website = contact.get("website") or "No website"
         parent_id = contact.get("parent_id")
         parent = parent_id[1] if parent_id else "No parent company"
         active = "Active" if contact.get("active", True) else "Archived"
+        vat = contact.get("vat") or "No tax ID"
+        title_id = contact.get("title")
+        title = title_id[1] if title_id else "No title"
+        function = contact.get("function") or "No job position"
+        ref = contact.get("ref") or "No reference"
+
+        # Get tags
+        category_ids = contact.get("category_id", [])
+        if category_ids:
+            Category = self.odoo.env["res.partner.category"]
+            categories = Category.read(category_ids, ["name"])
+            tags = ", ".join([cat["name"] for cat in categories])
+        else:
+            tags = "No tags"
+
+        # Get internal notes
+        notes = contact.get("comment") or "No notes"
 
         # Format address
         address_parts = []
@@ -91,6 +121,9 @@ class ContactsHandler(OdooBase):
         city_line = []
         if contact.get("city"):
             city_line.append(contact["city"])
+        state_id = contact.get("state_id")
+        if state_id:
+            city_line.append(state_id[1])
         if contact.get("zip"):
             city_line.append(contact["zip"])
         if city_line:
@@ -108,10 +141,18 @@ class ContactsHandler(OdooBase):
             f"**Email:** {email}  \n"
             f"**Phone:** {phone}  \n"
             f"**Mobile:** {mobile}  \n"
+            f"**Website:** {website}  \n"
         )
         if not contact.get("is_company"):
+            output += f"**Title:** {title}  \n"
+            output += f"**Job Position:** {function}  \n"
             output += f"**Company:** {parent}  \n"
-        output += f"\n## Address\n\n{address}"
+        else:
+            output += f"**Tax ID:** {vat}  \n"
+        output += f"**Reference:** {ref}  \n"
+        output += f"**Tags:** {tags}  \n"
+        output += f"\n## Address\n\n{address}\n\n"
+        output += f"## Internal Notes\n\n{notes}"
 
         return [TextContent(type="text", text=output)]
 
@@ -144,7 +185,7 @@ class ContactsHandler(OdooBase):
         # Read contact details
         contacts = Partner.read(
             contact_ids,
-            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id", "active"]
+            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id", "active", "category_id"]
         )
 
         # Format output
@@ -157,6 +198,15 @@ class ContactsHandler(OdooBase):
             parent = parent_id[1] if parent_id else "No parent company"
             active = "Active" if contact.get("active", True) else "Archived"
 
+            # Get tags
+            category_ids = contact.get("category_id", [])
+            if category_ids:
+                Category = self.odoo.env["res.partner.category"]
+                categories = Category.read(category_ids, ["name"])
+                tags = ", ".join([cat["name"] for cat in categories])
+            else:
+                tags = None
+
             output_lines.append(
                 f"## {contact['name']} (ID: {contact['id']})\n"
                 f"- Type: {contact_type}\n"
@@ -166,6 +216,77 @@ class ContactsHandler(OdooBase):
             )
             if not contact.get("is_company"):
                 output_lines.append(f"- Company: {parent}\n")
+            if tags:
+                output_lines.append(f"- Tags: {tags}\n")
+            output_lines.append("")
+
+        return [TextContent(type="text", text="\n".join(output_lines))]
+
+    async def search_contacts_by_tag(self, arguments: dict) -> list[TextContent]:
+        """Search contacts by tag name."""
+        tag_name = arguments.get("tag_name")
+        limit = arguments.get("limit", 50)
+
+        if not tag_name:
+            return [TextContent(type="text", text="Error: tag_name is required")]
+
+        # Access res.partner.category model
+        Category = self.odoo.env["res.partner.category"]
+
+        # Search for tag
+        tag_ids = Category.search([("name", "ilike", tag_name)], limit=1)
+
+        if not tag_ids:
+            return [TextContent(type="text", text=f"No tag found matching '{tag_name}'.")]
+
+        tag_id = tag_ids[0]
+        tag = Category.read(tag_id, ["name"])[0]
+        tag_name_actual = tag["name"]
+
+        # Access res.partner model
+        Partner = self.odoo.env["res.partner"]
+
+        # Search for contacts with this tag
+        contact_ids = Partner.search([("category_id", "in", [tag_id])], limit=limit)
+
+        if not contact_ids:
+            return [TextContent(type="text", text=f"No contacts found with tag '{tag_name_actual}'.")]
+
+        # Read contact details
+        contacts = Partner.read(
+            contact_ids,
+            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id", "active", "category_id"]
+        )
+
+        # Format output
+        output_lines = [f"# Contacts with Tag '{tag_name_actual}'\n\nFound {len(contacts)} contact(s):\n"]
+        for contact in contacts:
+            contact_type = "Company" if contact.get("is_company") else "Individual"
+            email = contact.get("email") or "No email"
+            phone = contact.get("phone") or contact.get("mobile") or "No phone"
+            parent_id = contact.get("parent_id")
+            parent = parent_id[1] if parent_id else "No parent company"
+            active = "Active" if contact.get("active", True) else "Archived"
+
+            # Get all tags
+            category_ids = contact.get("category_id", [])
+            if category_ids:
+                categories = Category.read(category_ids, ["name"])
+                tags = ", ".join([cat["name"] for cat in categories])
+            else:
+                tags = None
+
+            output_lines.append(
+                f"## {contact['name']} (ID: {contact['id']})\n"
+                f"- Type: {contact_type}\n"
+                f"- Status: {active}\n"
+                f"- Email: {email}\n"
+                f"- Phone: {phone}\n"
+            )
+            if not contact.get("is_company"):
+                output_lines.append(f"- Company: {parent}\n")
+            if tags:
+                output_lines.append(f"- Tags: {tags}\n")
             output_lines.append("")
 
         return [TextContent(type="text", text="\n".join(output_lines))]
@@ -212,6 +333,44 @@ class ContactsHandler(OdooBase):
 
         if "country_id" in arguments and arguments["country_id"]:
             contact_values["country_id"] = arguments["country_id"]
+
+        if "state_id" in arguments and arguments["state_id"]:
+            contact_values["state_id"] = arguments["state_id"]
+
+        if "website" in arguments and arguments["website"]:
+            contact_values["website"] = arguments["website"]
+
+        if "vat" in arguments and arguments["vat"]:
+            contact_values["vat"] = arguments["vat"]
+
+        if "title" in arguments and arguments["title"]:
+            contact_values["title"] = arguments["title"]
+
+        if "function" in arguments and arguments["function"]:
+            contact_values["function"] = arguments["function"]
+
+        if "ref" in arguments and arguments["ref"]:
+            contact_values["ref"] = arguments["ref"]
+
+        # Handle tags
+        if "tags" in arguments and arguments["tags"]:
+            tag_names = arguments["tags"]
+            Category = self.odoo.env["res.partner.category"]
+            tag_ids = []
+            for tag_name in tag_names:
+                # Search for existing tag
+                existing_tag = Category.search([("name", "=", tag_name)], limit=1)
+                if existing_tag:
+                    tag_ids.append(existing_tag[0])
+                else:
+                    # Create new tag
+                    new_tag_id = Category.create({"name": tag_name})
+                    tag_ids.append(new_tag_id)
+            contact_values["category_id"] = [(6, 0, tag_ids)]
+
+        # Handle internal notes
+        if "notes" in arguments and arguments["notes"]:
+            contact_values["comment"] = arguments["notes"]
 
         # Handle image upload
         if "image_url" in arguments and arguments["image_url"]:
@@ -282,6 +441,51 @@ class ContactsHandler(OdooBase):
 
         if "zip" in arguments:
             update_values["zip"] = arguments["zip"]
+
+        if "state_id" in arguments:
+            update_values["state_id"] = arguments["state_id"]
+
+        if "country_id" in arguments:
+            update_values["country_id"] = arguments["country_id"]
+
+        if "website" in arguments:
+            update_values["website"] = arguments["website"]
+
+        if "vat" in arguments:
+            update_values["vat"] = arguments["vat"]
+
+        if "title" in arguments:
+            update_values["title"] = arguments["title"]
+
+        if "function" in arguments:
+            update_values["function"] = arguments["function"]
+
+        if "ref" in arguments:
+            update_values["ref"] = arguments["ref"]
+
+        # Handle tags
+        if "tags" in arguments:
+            if arguments["tags"]:
+                tag_names = arguments["tags"]
+                Category = self.odoo.env["res.partner.category"]
+                tag_ids = []
+                for tag_name in tag_names:
+                    # Search for existing tag
+                    existing_tag = Category.search([("name", "=", tag_name)], limit=1)
+                    if existing_tag:
+                        tag_ids.append(existing_tag[0])
+                    else:
+                        # Create new tag
+                        new_tag_id = Category.create({"name": tag_name})
+                        tag_ids.append(new_tag_id)
+                update_values["category_id"] = [(6, 0, tag_ids)]
+            else:
+                # Empty list means clear all tags
+                update_values["category_id"] = [(5, 0, 0)]
+
+        # Handle internal notes
+        if "notes" in arguments:
+            update_values["comment"] = arguments["notes"]
 
         # Handle image upload
         if "image_url" in arguments and arguments["image_url"]:

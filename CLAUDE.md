@@ -252,6 +252,50 @@ Partner.write(contact_id, {"image_1920": image_base64})
 - Images must be base64 encoded strings
 - Odoo automatically creates smaller variants (image_512, image_256, etc.)
 
+## Contacts (res.partner)
+
+Contacts support tags and internal notes for better organization and tracking:
+
+**Tags:**
+- Field: `category_id` (many2many to `res.partner.category`)
+- Tags are automatically created if they don't exist when assigning to contacts
+- Used for categorization and filtering (e.g., "Customer", "Supplier", "VIP")
+- Multiple tags can be assigned to a single contact
+
+**Internal Notes:**
+- Field: `comment` (text field)
+- Private notes about the contact, not visible to the contact
+- Useful for tracking relationship details, preferences, or history
+
+```python
+# Create contact with tags and notes
+Partner = self.odoo.env["res.partner"]
+Category = self.odoo.env["res.partner.category"]
+
+# Find or create tags
+tag_ids = []
+for tag_name in ["Customer", "VIP"]:
+    tag = Category.search([("name", "=", tag_name)], limit=1)
+    if tag:
+        tag_ids.append(tag[0])
+    else:
+        tag_ids.append(Category.create({"name": tag_name}))
+
+# Create contact with tags and notes
+Partner.create({
+    "name": "John Doe",
+    "email": "john@example.com",
+    "category_id": [(6, 0, tag_ids)],  # Set tags
+    "comment": "Met at trade show, interested in product line A"
+})
+```
+
+**Key points:**
+- Tags are shared across all contacts and can be reused
+- Use `(6, 0, [ids])` to replace all tags on a contact
+- Use `(5, 0, 0)` to clear all tags
+- Internal notes are plain text, not HTML
+
 ## Mailing Lists
 
 The mailing list system maintains separate `mailing.contact` records from the main `res.partner` contacts:

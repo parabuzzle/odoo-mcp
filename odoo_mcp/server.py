@@ -691,6 +691,39 @@ class OdooMCPServer:
                             "type": "integer",
                             "description": "Country ID (optional)"
                         },
+                        "state_id": {
+                            "type": "integer",
+                            "description": "State/Province ID (optional)"
+                        },
+                        "website": {
+                            "type": "string",
+                            "description": "Website URL (optional)"
+                        },
+                        "vat": {
+                            "type": "string",
+                            "description": "Tax ID/VAT number (optional)"
+                        },
+                        "title": {
+                            "type": "integer",
+                            "description": "Title ID (Mr/Ms/Dr, etc.) (optional)"
+                        },
+                        "function": {
+                            "type": "string",
+                            "description": "Job position/function (optional)"
+                        },
+                        "ref": {
+                            "type": "string",
+                            "description": "Internal reference (optional)"
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of tag names to assign to the contact (optional). Tags will be created if they don't exist."
+                        },
+                        "notes": {
+                            "type": "string",
+                            "description": "Internal notes about the contact (optional)"
+                        },
                         "image_url": {
                             "type": "string",
                             "description": "URL of the image/logo to upload (optional). Will be downloaded and converted to base64."
@@ -740,6 +773,43 @@ class OdooMCPServer:
                         "zip": {
                             "type": "string",
                             "description": "New zip/postal code (optional)"
+                        },
+                        "state_id": {
+                            "type": "integer",
+                            "description": "New state/province ID (optional)"
+                        },
+                        "country_id": {
+                            "type": "integer",
+                            "description": "New country ID (optional)"
+                        },
+                        "website": {
+                            "type": "string",
+                            "description": "New website URL (optional)"
+                        },
+                        "vat": {
+                            "type": "string",
+                            "description": "New tax ID/VAT number (optional)"
+                        },
+                        "title": {
+                            "type": "integer",
+                            "description": "New title ID (Mr/Ms/Dr, etc.) (optional)"
+                        },
+                        "function": {
+                            "type": "string",
+                            "description": "New job position/function (optional)"
+                        },
+                        "ref": {
+                            "type": "string",
+                            "description": "New internal reference (optional)"
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of tag names to assign to the contact (optional). Tags will be created if they don't exist. Pass empty array to clear all tags."
+                        },
+                        "notes": {
+                            "type": "string",
+                            "description": "Internal notes about the contact (optional). Pass empty string to clear notes."
                         },
                         "image_url": {
                             "type": "string",
@@ -794,6 +864,25 @@ class OdooMCPServer:
                         }
                     },
                     "required": ["query"]
+                }
+            ),
+            Tool(
+                name="search_contacts_by_tag",
+                description="Search contacts by tag name. Returns all contacts that have the specified tag.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tag_name": {
+                            "type": "string",
+                            "description": "The name of the tag to search for"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of contacts to return (default: 50)",
+                            "default": 50
+                        }
+                    },
+                    "required": ["tag_name"]
                 }
             ),
             Tool(
@@ -1358,6 +1447,8 @@ class OdooMCPServer:
                 return await self.contacts.archive_contact(arguments)
             elif name == "search_contacts":
                 return await self.contacts.search_contacts(arguments)
+            elif name == "search_contacts_by_tag":
+                return await self.contacts.search_contacts_by_tag(arguments)
 
             # Mailing tools
             elif name == "list_mailing_lists":

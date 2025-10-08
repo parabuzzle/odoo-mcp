@@ -126,11 +126,12 @@ Add to your Cursor MCP settings.
 
 ### Contacts
 
-- **list_contacts**: List contacts in Odoo with optional filtering by type (company or individual). Returns names, IDs, emails, phones, and company information
-- **get_contact**: Get a specific contact by ID with full details including address, email, phone, mobile, and related company
-- **search_contacts**: Search contacts by name, email, or company name. Returns matching contacts with basic information
-- **create_contact**: Create a new contact with optional fields like email, phone, mobile, address, parent company, and logo/image from URL. Supports both company and individual contacts
-- **update_contact**: Update an existing contact - modify name, email, phone, mobile, address fields, or upload logo/image from URL
+- **list_contacts**: List contacts in Odoo with optional filtering by type (company or individual). Returns names, IDs, emails, phones, tags, and company information
+- **get_contact**: Get a specific contact by ID with comprehensive details including address, email, phone, mobile, website, VAT/tax ID, title, job function, internal reference, tags, internal notes, and related company
+- **search_contacts**: Search contacts by name, email, or company name. Returns matching contacts with basic information including tags
+- **search_contacts_by_tag**: Search contacts by tag name. Returns all contacts that have the specified tag
+- **create_contact**: Create a new contact with comprehensive support for all res.partner fields including email, phone, mobile, website, VAT/tax ID, title, job function, internal reference, address, state/province, country, parent company, tags, internal notes, and logo/image from URL. Supports both company and individual contacts
+- **update_contact**: Update an existing contact - modify any field including name, email, phone, mobile, website, VAT/tax ID, title, job function, internal reference, address, state/province, country, tags, internal notes, or upload logo/image from URL
 - **delete_contact**: Permanently delete a contact
 - **archive_contact**: Archive a contact (hidden from default views but can be restored later)
 
@@ -204,7 +205,7 @@ odoo-mcp/
 │   ├── projects.py        # Projects and tasks operations (13 tools)
 │   ├── knowledge.py       # Knowledge articles operations (6 tools)
 │   ├── helpdesk.py        # Helpdesk tickets operations (8 tools)
-│   ├── contacts.py        # Contacts/partners operations (7 tools)
+│   ├── contacts.py        # Contacts/partners operations (8 tools)
 │   ├── mailing.py         # Mailing lists operations (10 tools)
 │   ├── users.py           # Users operations (1 tool)
 │   ├── activities.py      # Activities/scheduled follow-ups (7 tools)
