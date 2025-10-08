@@ -73,6 +73,14 @@ class MailingHandler(OdooBase):
                 ["contact_id", "opt_out", "opt_out_datetime"]
             )
 
+            # Get mailing contact details
+            MailingContact = self.odoo.env["mailing.contact"]
+            contact_ids = [s["contact_id"][0] for s in subscriptions if s.get("contact_id")]
+            contacts = {}
+            if contact_ids:
+                contact_records = MailingContact.read(contact_ids, ["id", "name", "email"])
+                contacts = {c["id"]: c for c in contact_records}
+
             # Separate active and opted-out subscribers
             active_subs = [s for s in subscriptions if not s.get("opt_out")]
             opted_out_subs = [s for s in subscriptions if s.get("opt_out")]
@@ -83,7 +91,11 @@ class MailingHandler(OdooBase):
                 for sub in active_subs:
                     contact_info = sub.get("contact_id")
                     if contact_info:
-                        output += f"- {contact_info[1]}\n"
+                        contact_id = contact_info[0]
+                        contact = contacts.get(contact_id, {})
+                        name = contact.get("name", contact_info[1])
+                        email = contact.get("email", "")
+                        output += f"- {name} ({email})\n"
                 output += "\n"
 
             # Show opted-out subscribers
@@ -93,7 +105,11 @@ class MailingHandler(OdooBase):
                     contact_info = sub.get("contact_id")
                     opt_out_datetime = sub.get("opt_out_datetime", "Unknown")
                     if contact_info:
-                        output += f"- {contact_info[1]} (opted out: {opt_out_datetime})\n"
+                        contact_id = contact_info[0]
+                        contact = contacts.get(contact_id, {})
+                        name = contact.get("name", contact_info[1])
+                        email = contact.get("email", "")
+                        output += f"- {name} ({email}) (opted out: {opt_out_datetime})\n"
                 output += "\n"
 
             if not active_subs and not opted_out_subs:
@@ -186,7 +202,7 @@ class MailingHandler(OdooBase):
         ml = MailingList.read(list_id, ["name"])[0]
         list_name = ml["name"]
 
-        # Check if contact already exists
+        # Check if contact already exists in this list
         MailingContact = self.odoo.env["mailing.contact"]
         existing_contacts = MailingContact.search([
             ("email", "=", email),
@@ -196,17 +212,38 @@ class MailingHandler(OdooBase):
         if existing_contacts:
             return [TextContent(type="text", text=f"Contact {email} is already subscribed to {list_name}.")]
 
+        # Search for existing res.partner contact with this email to get the proper name
+        Partner = self.odoo.env["res.partner"]
+        partner_ids = Partner.search([("email", "=", email)], limit=1)
+        partner_name = None
+
+        if partner_ids:
+            partner = Partner.read(partner_ids[0], ["name"])[0]
+            partner_name = partner["name"]
+
         # Find or create mailing contact
         contact_ids = MailingContact.search([("email", "=", email)])
 
         if contact_ids:
-            # Contact exists, add to list
+            # Contact exists, update name from partner if available and add to list
             contact = MailingContact.browse(contact_ids[0])
-            contact.write({"list_ids": [(4, list_id)]})
+            update_data = {"list_ids": [(4, list_id)]}
+
+            # Update name to match partner if found
+            if partner_name:
+                existing_contact = MailingContact.read(contact_ids[0], ["name"])[0]
+                if existing_contact.get("name") != partner_name:
+                    update_data["name"] = partner_name
+
+            contact.write(update_data)
             contact_name = MailingContact.read(contact_ids[0], ["name"])[0]["name"]
         else:
-            # Create new contact
-            contact_name = name if name else email.split("@")[0]
+            # Create new contact, using partner name if available
+            if partner_name:
+                contact_name = partner_name
+            else:
+                contact_name = name if name else email.split("@")[0]
+
             MailingContact.create({
                 "name": contact_name,
                 "email": email,
@@ -217,6 +254,9 @@ class MailingHandler(OdooBase):
             f"# Subscription Successful\n\n"
             f"**{contact_name}** ({email}) has been subscribed to **{list_name}**."
         )
+
+        if partner_name:
+            output += f"\n\nUsing name from contact record: {partner_name}"
 
         return [TextContent(type="text", text=output)]
 
