@@ -252,6 +252,21 @@ Partner.write(contact_id, {"image_1920": image_base64})
 - Images must be base64 encoded strings
 - Odoo automatically creates smaller variants (image_512, image_256, etc.)
 
+## Mailing Lists
+
+The mailing list system maintains separate `mailing.contact` records from the main `res.partner` contacts:
+
+**Contact Management:**
+- `mailing.contact` - Mailing list subscribers (separate from res.partner)
+- `mailing.subscription` - Links mailing contacts to lists, tracks opt-in/opt-out
+- The `subscribe_contact` function automatically searches for matching `res.partner` contacts by email and uses the partner's name for the mailing contact
+
+**Key points:**
+- Mailing contacts are separate records from regular contacts (res.partner)
+- When subscribing an email, the system searches for a res.partner with that email and uses the partner's name
+- This ensures consistent naming across mailing lists and the contact database
+- The `get_mailing_list` function shows both names and email addresses for clarity
+
 ## To-Do App (Personal Tasks)
 
 The To-Do app uses `project.task` records without a project (`project_id = False`) and has special handling:
