@@ -74,18 +74,12 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 
 ### Claude Code
 
-Add to your Claude Code MCP settings (`~/.config/claude-code/mcp_settings.json`):
+A `.mcp.json` file is included at the project root. When you open this project in Claude Code, it will automatically detect the MCP server configuration and prompt you to approve it.
 
-```json
-{
-  "mcpServers": {
-    "odoo": {
-      "command": "python",
-      "args": ["-m", "odoo_mcp.server"],
-      "cwd": "/path/to/odoo-mcp"
-    }
-  }
-}
+Alternatively, you can manually add the server using:
+
+```bash
+claude mcp add odoo --scope project python -m odoo_mcp.server
 ```
 
 ### Cursor
@@ -98,10 +92,14 @@ Add to your Cursor MCP settings.
 
 - **list_projects**: List all projects in Odoo with names, IDs, managers, customers, and task counts
 - **get_project_tasks**: Get all tasks/tickets for a specific project with details like assignees, stages, priorities, and descriptions
+- **create_task**: Create a new task in a project with optional fields like description, assignees (by name or email), stage, priority, deadline, and parent task (for subtasks)
+- **update_task**: Update an existing task - modify name, description, assignees, stage, priority, or deadline
+- **delete_task**: Permanently delete a task and all its subtasks
+- **archive_task**: Archive a task (hidden from default views but can be restored later)
 
 ## Supported Apps (Roadmap)
 
-- [x] Projects - interact with projects. Read projects and tasks.
+- [x] Projects - interact with projects. Read, create, update, delete, and archive tasks.
 - [ ] Knowledge - interact with knowledge base. Read and update documents.
 - [ ] Helpdesk - interact with help desk projects. Read and update tickets. Read and send messages with customers.
 - [ ] Contacts - read and update contacts
