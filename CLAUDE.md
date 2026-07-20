@@ -15,6 +15,8 @@ This is a Model Context Protocol (MCP) server for integrating Odoo cloud apps wi
 - **Users** (1 tool): List Odoo users for task and ticket assignments.
 - **Activities** (7 tools): Manage scheduled follow-ups and activities. List, create, update, mark done, delete activities. List activity types. Activities can be linked to any Odoo record.
 - **To-Do App** (7 tools): Manage personal to-do list. List, create, update, mark done, delete to-dos. List stages. Organize by stages (Inbox, Today, This Week, This Month, Later).
+- **Spreadsheets** (5 tools): Manage spreadsheets in the Documents app (`documents.document`, `handler='spreadsheet'`). List, read, create, update, delete spreadsheets. Content is stored as o-spreadsheet JSON in `spreadsheet_data`.
+- **Dashboards** (8 tools): Manage spreadsheet dashboards (`spreadsheet.dashboard`, `spreadsheet.dashboard.group`). Full CRUD on dashboards and groups. Includes `create_inventory_dashboard`, which queries live `stock.quant` data, aggregates on-hand quantity/value by product/location/warehouse/category, and writes a snapshot data table + chart into a new dashboard or spreadsheet.
 
 ## Commands
 
@@ -48,7 +50,10 @@ odoo-mcp/
 │   ├── mailing.py         # Mailing lists operations (10 tools)
 │   ├── users.py           # Users operations (1 tool)
 │   ├── activities.py      # Activities/scheduled follow-ups (7 tools)
-│   └── todos.py           # To-Do app/personal tasks (7 tools)
+│   ├── todos.py           # To-Do app/personal tasks (7 tools)
+│   ├── spreadsheets.py    # Documents spreadsheets (5 tools)
+│   ├── dashboards.py      # Spreadsheet dashboards + inventory builder (8 tools)
+│   └── spreadsheet_utils.py  # o-spreadsheet JSON builder helpers
 ├── test_connection.py     # Test script for Odoo connectivity
 ├── pyproject.toml        # Project dependencies
 ├── .env                  # Environment variables (gitignored)
@@ -77,6 +82,8 @@ Each Odoo app has its own handler module inheriting from OdooBase:
 - **UsersHandler** (`users.py`) - 1 tool for users
 - **ActivitiesHandler** (`activities.py`) - 7 tools for activities/scheduled follow-ups
 - **TodosHandler** (`todos.py`) - 7 tools for personal to-do list
+- **SpreadsheetsHandler** (`spreadsheets.py`) - 5 tools for Documents spreadsheets
+- **DashboardsHandler** (`dashboards.py`) - 8 tools for spreadsheet dashboards and the inventory dashboard builder
 
 Each handler:
 - Implements tools as async methods
@@ -90,7 +97,7 @@ Each handler:
 The OdooMCPServer class:
 1. **Initialization** - Creates handler instances for each Odoo app
 2. **Connection sharing** - Establishes Odoo connection and shares it among all handlers
-3. **Tool registration** - Registers all 60 tools via `@server.list_tools()` decorator
+3. **Tool registration** - Registers all 73 tools via `@server.list_tools()` decorator
 4. **Tool routing** - Routes tool calls to appropriate handlers via `@server.call_tool()` decorator
 5. **Graceful shutdown** - Handles SIGINT/SIGTERM signals and cleans up resources
 
@@ -198,6 +205,12 @@ Required in `.env` file:
 - `mail.message` - Messages/chatter entries
 - `mail.activity` - Activities/to-dos (scheduled tasks and follow-ups)
 - `mail.activity.type` - Activity types (To-do, Call, Email, Meeting, etc.)
+- `documents.document` - Documents, including spreadsheets (`handler='spreadsheet'`)
+- `spreadsheet.dashboard` - Spreadsheet dashboards (Dashboards app)
+- `spreadsheet.dashboard.group` - Dashboard groups/sections
+- `stock.quant` - On-hand stock levels (quantity per product per location)
+- `stock.location` - Stock locations (has `usage`, `warehouse_id`, `complete_name`)
+- `product.product` - Product variants (has `categ_id`, `standard_price`)
 
 ## Message Handling
 
@@ -352,6 +365,32 @@ Task.write(todo_id, {
 - Setting only `state="1_done"` marks it complete but doesn't move it to Done column
 - Setting only the stage doesn't mark it as complete (state remains in progress)
 - Both fields are required for proper "done" behavior in the UI
+
+## Spreadsheets and Dashboards
+
+Odoo spreadsheets and spreadsheet dashboards both store their content as an
+**o-spreadsheet JSON** document (a text field named `spreadsheet_data`).
+
+**Where content lives:**
+- Spreadsheets: `documents.document` records with `handler='spreadsheet'`. They live inside a Documents folder/workspace (`folder_id`). The folder model differs by version — `documents.folder` (Odoo 16/17) vs. `documents.document` with `type='folder'` (Odoo 18) — so `SpreadsheetsHandler._resolve_folder_id` tries both.
+- Dashboards: `spreadsheet.dashboard` records, grouped by `spreadsheet.dashboard.group` (`dashboard_group_id`).
+
+**Building o-spreadsheet JSON (`spreadsheet_utils.py`):**
+- `build_table_spreadsheet(...)` turns a simple `headers` + `rows` table into a valid o-spreadsheet payload, with an optional bold title, totals row, and a chart figure. It sticks to the long-stable core of the format (`sheets[].cells` as `{content, style}` maps, top-level `styles`, and `figures`) so snapshots load across versions.
+- `empty_spreadsheet(...)` returns a minimal blank document.
+- `dumps(data)` serializes to the compact JSON string Odoo stores.
+- Cell addresses are A1-style; `col_letter(i)` converts a 0-based column index to a letter.
+
+**Inventory dashboard builder (`create_inventory_dashboard`):**
+- Reads on-hand stock from `stock.quant` filtered to internal locations (`location_id.usage = 'internal'`).
+- Aggregates in Python by `group_by` (product/location/warehouse/category) and `measure` (`quantity`, or `value`). For `warehouse`/`category`, it reads `stock.location.warehouse_id` / `product.product.categ_id` to map records to labels. For `value`, it uses the quant's `value` field when present, otherwise falls back to `quantity × product.standard_price`.
+- Writes the result as a **snapshot** (plain values). Re-run to refresh.
+- `target='dashboard'` creates a `spreadsheet.dashboard`; `target='spreadsheet'` delegates to `SpreadsheetsHandler.create_spreadsheet` (wired via `self.dashboards.spreadsheets` in the server).
+
+**Advanced / live content:**
+- For live, self-refreshing pivots or lists that query Odoo models directly, build the o-spreadsheet JSON yourself (version-specific) and pass it through the `data_json` argument of `create_spreadsheet` / `create_dashboard` (or `update_*`). The generated snapshot path intentionally avoids that fragility.
+
+**Requirements:** the Documents app for spreadsheets, the Dashboards app for dashboards, and the Inventory app (`stock.quant`) for the inventory builder. Each handler returns a clear error if the relevant app/model is unavailable.
 
 ## Key Dependencies
 
