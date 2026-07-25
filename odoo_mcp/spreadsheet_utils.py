@@ -172,6 +172,155 @@ def build_table_spreadsheet(
     }
 
 
+def build_live_pivot_spreadsheet(
+    title: str,
+    model: str,
+    domain: list,
+    measure_fields: list[str],
+    row_fields: list[str],
+    pivot_name: str | None = None,
+    subtitle: str | None = None,
+    chart_type: str | None = None,
+    chart_measure: str | None = None,
+    chart_group_by: str | None = None,
+    schema_version: int = 21,
+    odoo_version: int = 12,
+    settings: dict | None = None,
+) -> dict:
+    """Build a LIVE o-spreadsheet payload with a dynamic pivot and optional chart.
+
+    Unlike :func:`build_table_spreadsheet` (a plain-values snapshot), the result
+    self-refreshes: the pivot is an ODOO data source rendered with a spilled
+    ``=PIVOT(1)`` formula and the chart is an ``odoo_*`` chart bound to the
+    model, so both re-query Odoo every time the dashboard/spreadsheet is opened.
+
+    This uses the newer schema (version 21, Odoo 18 era) with ``pivots`` and
+    Odoo-bound chart figures. Callers should pass ``schema_version`` /
+    ``odoo_version`` / ``settings`` harvested from an existing document on the
+    same instance when available so the payload matches what the client expects.
+
+    Args:
+        title: Big title placed in cell A1.
+        model: Odoo model the pivot queries (e.g. ``stock.quant``).
+        domain: Search domain as a list (e.g. ``[["location_id", "in", [1]]]``).
+        measure_fields: Field names summed as pivot measures.
+        row_fields: Field names used as (nested) pivot row group-bys.
+        pivot_name: Display name of the pivot data source.
+        subtitle: Optional muted note under the title.
+        chart_type: 'bar', 'line' or 'pie' for a live chart; None for no chart.
+        chart_measure: Field the chart measures (defaults to first measure).
+        chart_group_by: Field the chart groups by (defaults to first row field).
+        schema_version: o-spreadsheet schema version to declare.
+        odoo_version: Odoo-side migration version to declare.
+        settings: Locale settings dict from an existing document, if any.
+    """
+    cells = {
+        "A1": {"content": str(title)},
+        "A4": {"content": "=PIVOT(1)"},
+    }
+    styles_map = {"A1": 1}
+    if subtitle:
+        cells["A2"] = {"content": str(subtitle)}
+        styles_map["A2"] = 2
+
+    figures = []
+    if chart_type:
+        figures.append({
+            "id": "live-chart-1",
+            "x": 700,
+            "y": 30,
+            "width": 560,
+            "height": 360,
+            "tag": "chart",
+            "data": {
+                "title": {"text": str(title)},
+                "background": "#FFFFFF",
+                "legendPosition": "top",
+                "metaData": {
+                    "groupBy": [chart_group_by or row_fields[0]],
+                    "measure": chart_measure or measure_fields[0],
+                    "order": None,
+                    "resModel": model,
+                    "mode": chart_type,
+                },
+                "searchParams": {
+                    "comparison": None,
+                    "context": {},
+                    "domain": domain,
+                    "groupBy": [chart_group_by or row_fields[0]],
+                    "orderBy": [],
+                },
+                "type": f"odoo_{chart_type}",
+                "verticalAxisPosition": "left",
+                "stacked": False,
+                "fieldMatching": {},
+            },
+        })
+
+    sheet = {
+        "id": "sheet1",
+        "name": "Dashboard",
+        "colNumber": 26,
+        "rowNumber": 120,
+        "cells": cells,
+        "styles": styles_map,
+        "formats": {},
+        "borders": {},
+        "merges": [],
+        "cols": {},
+        "rows": {},
+        "conditionalFormats": [],
+        "dataValidationRules": [],
+        "figures": figures,
+        "tables": [],
+        "comments": {},
+        "headerGroups": {},
+        "areGridLinesVisible": True,
+        "isVisible": True,
+    }
+
+    data = {
+        "version": schema_version,
+        "odooVersion": odoo_version,
+        "sheets": [sheet],
+        "styles": {
+            "1": {"bold": True, "fontSize": 16, "textColor": "#01666B"},
+            "2": {"textColor": "#888888"},
+        },
+        "formats": {},
+        "borders": {},
+        "revisionId": "START_REVISION",
+        "uniqueFigureIds": True,
+        "customTableStyles": {},
+        "globalFilters": [],
+        "chartOdooMenusReferences": {},
+        "lists": {},
+        "listNextId": 1,
+        "pivots": {
+            "1": {
+                "type": "ODOO",
+                "model": model,
+                "domain": domain,
+                "context": {},
+                "sortedColumn": None,
+                "measures": [
+                    {"id": f"{f}:sum", "fieldName": f, "aggregator": "sum"}
+                    for f in measure_fields
+                ],
+                "rows": [{"fieldName": f} for f in row_fields],
+                "columns": [],
+                "name": pivot_name or title,
+                "fieldMatching": {},
+                "formulaId": "1",
+            }
+        },
+        "pivotNextId": 2,
+    }
+    if settings:
+        data["settings"] = settings
+    return data
+
+
 def empty_spreadsheet(sheet_name: str = "Sheet1") -> dict:
     """Return a minimal empty o-spreadsheet data dict."""
     return {

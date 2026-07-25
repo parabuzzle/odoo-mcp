@@ -1572,26 +1572,33 @@ class OdooMCPServer:
                 name="create_inventory_dashboard",
                 description=(
                     "Build a custom inventory dashboard from live stock data. Queries on-hand stock "
-                    "(stock.quant, internal locations), aggregates by product/location/warehouse/category, "
-                    "and writes a data table plus a chart into a new dashboard (or Documents spreadsheet). "
-                    "The data is a point-in-time snapshot written as plain values (robust across Odoo versions); "
-                    "re-run to refresh. Requires the Inventory app, plus the Dashboards or Documents app depending on target."
+                    "(stock.quant, internal locations), grouped by product/location/warehouse/category, "
+                    "written into a new dashboard, an existing dashboard (dashboard_id), or a Documents spreadsheet. "
+                    "mode='snapshot' (default) writes a point-in-time data table as plain values (robust across "
+                    "Odoo versions; re-run to refresh). mode='live' writes a self-refreshing pivot (qty + value "
+                    "measures, optional two-level grouping via sub_group_by) plus a live chart that re-query Odoo "
+                    "every time the dashboard is opened. Requires the Inventory app, plus the Dashboards or "
+                    "Documents app depending on target."
                 ),
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "name": {"type": "string", "description": "Dashboard/spreadsheet name (default: 'Inventory Dashboard')"},
+                        "mode": {"type": "string", "enum": ["snapshot", "live"], "description": "'snapshot' writes plain values (re-run to refresh); 'live' writes a self-refreshing pivot + chart (default: snapshot)"},
                         "group_by": {"type": "string", "enum": ["product", "location", "warehouse", "category"], "description": "How to group the inventory (default: product)"},
-                        "measure": {"type": "string", "enum": ["quantity", "value"], "description": "'quantity' for on-hand units, 'value' for on-hand value (default: quantity)"},
-                        "limit": {"type": "integer", "description": "Number of top groups to show in the table/chart (default: 30)", "default": 30},
+                        "sub_group_by": {"type": "string", "enum": ["product", "location", "warehouse", "category"], "description": "Optional second grouping level nested under group_by (live mode only), e.g. location -> product"},
+                        "measure": {"type": "string", "enum": ["quantity", "value"], "description": "'quantity' for on-hand units, 'value' for on-hand value (default: quantity). Live pivots always include both; this picks the chart measure."},
+                        "limit": {"type": "integer", "description": "Snapshot mode: number of top groups to show in the table/chart (default: 30)", "default": 30},
                         "include_chart": {"type": "boolean", "description": "Include a chart figure (default: true)", "default": True},
                         "chart_type": {"type": "string", "enum": ["bar", "line", "pie"], "description": "Chart type (default: bar)"},
                         "target": {"type": "string", "enum": ["dashboard", "spreadsheet"], "description": "Create a Dashboards-app dashboard or a Documents spreadsheet (default: dashboard)"},
-                        "group": {"type": "string", "description": "Dashboard group name or ID (when target=dashboard). Created if missing."},
+                        "dashboard_id": {"type": "integer", "description": "Write into this existing dashboard instead of creating a new one (replaces its content)"},
+                        "group": {"type": "string", "description": "Dashboard group name or ID (when creating a dashboard). Created if missing."},
                         "folder": {"type": "string", "description": "Documents folder name or ID (when target=spreadsheet)."},
                         "product": {"type": "string", "description": "Optional product name filter (case-insensitive)"},
                         "location": {"type": "string", "description": "Optional location name filter (case-insensitive)"},
-                        "scan_limit": {"type": "integer", "description": "Max stock records to scan when aggregating (default: 5000)", "default": 5000}
+                        "location_ids": {"type": "array", "items": {"type": "integer"}, "description": "Optional list of stock.location IDs to restrict to specific locations"},
+                        "scan_limit": {"type": "integer", "description": "Snapshot mode: max stock records to scan when aggregating (default: 5000)", "default": 5000}
                     }
                 }
             ),

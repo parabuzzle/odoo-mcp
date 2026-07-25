@@ -193,7 +193,11 @@ Manage spreadsheet dashboards from the Odoo Dashboards app (`spreadsheet.dashboa
 - **create_dashboard**: Create a new dashboard from raw o-spreadsheet JSON (or empty)
 - **update_dashboard**: Update a dashboard's name, group, and/or o-spreadsheet content
 - **delete_dashboard**: Delete a dashboard
-- **create_inventory_dashboard**: Build a custom inventory dashboard from **live** stock data. Queries on-hand stock (`stock.quant`, internal locations), aggregates by product/location/warehouse/category, and writes a data table plus a chart into a new dashboard (or Documents spreadsheet). Supports `measure` (on-hand quantity or value), product/location filters, chart type, and a top-N limit. The data is written as a point-in-time **snapshot** (plain values, robust across Odoo versions) — re-run the tool to refresh it. For a live self-refreshing pivot instead, build the o-spreadsheet JSON and pass it via `create_dashboard`/`create_spreadsheet`'s `data_json`.
+- **create_inventory_dashboard**: Build a custom inventory dashboard from stock data. Queries on-hand stock (`stock.quant`, internal locations), grouped by product/location/warehouse/category, written into a new dashboard, an existing dashboard (`dashboard_id`), or a Documents spreadsheet. Two modes:
+  - `mode: "snapshot"` (default) — writes a data table plus chart as plain values (robust across Odoo versions); re-run the tool to refresh. Supports `measure` (quantity or value), product/location filters, chart type, and a top-N limit.
+  - `mode: "live"` — writes a **self-refreshing pivot** (quantity + value measures, optional two-level grouping via `sub_group_by`, e.g. location → product) plus a live chart. Both re-query Odoo every time the dashboard is opened — no re-running needed. The payload's schema version is cloned from an existing dashboard on the instance for compatibility.
+
+  Both modes accept `location_ids` to restrict to specific stock locations (e.g. beta/loaner buckets).
 
 ## Supported Apps (Roadmap)
 
