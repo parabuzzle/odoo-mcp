@@ -17,6 +17,7 @@ This is a Model Context Protocol (MCP) server for integrating Odoo cloud apps wi
 - **To-Do App** (7 tools): Manage personal to-do list. List, create, update, mark done, delete to-dos. List stages. Organize by stages (Inbox, Today, This Week, This Month, Later).
 - **Spreadsheets** (5 tools): Manage spreadsheets in the Documents app (`documents.document`, `handler='spreadsheet'`). List, read, create, update, delete spreadsheets. Content is stored as o-spreadsheet JSON in `spreadsheet_data`.
 - **Dashboards** (8 tools): Manage spreadsheet dashboards (`spreadsheet.dashboard`, `spreadsheet.dashboard.group`). Full CRUD on dashboards and groups. Includes `create_inventory_dashboard`, which builds an on-hand inventory dashboard from `stock.quant` grouped by product/location/warehouse/category — either as a snapshot data table + chart (`mode='snapshot'`, re-run to refresh) or as a self-refreshing live pivot + Odoo-bound chart (`mode='live'`, supports two-level grouping via `sub_group_by`). Can create a new dashboard/spreadsheet or overwrite an existing dashboard via `dashboard_id`.
+- **Manufacturing** (4 tools, read-only): `list_products` (by internal-reference prefix or ids, with archived-record support and a variant-aware `has_bom` flag), `get_boms` (complete BoM structures with lines resolved to component identity), `get_stock` (on-hand quantity/value aggregates with location scoping), `list_locations` (stock locations with usage filter). Deliberately scoped — no generic model passthrough, no writes to product/BoM/stock/location models. Built to support clear-to-build (CTB) spreadsheet regeneration from live BoM data.
 
 ## Commands
 
@@ -24,6 +25,10 @@ This is a Model Context Protocol (MCP) server for integrating Odoo cloud apps wi
 ```bash
 # Test Odoo connection
 python test_connection.py
+
+# Regression test: round-trip a 120KB data_json through update_dashboard,
+# both handler-level and over MCP stdio (creates + deletes a test dashboard)
+python test_payload_limit.py
 
 # Run the MCP server
 python -m odoo_mcp.server
@@ -53,8 +58,10 @@ odoo-mcp/
 │   ├── todos.py           # To-Do app/personal tasks (7 tools)
 │   ├── spreadsheets.py    # Documents spreadsheets (5 tools)
 │   ├── dashboards.py      # Spreadsheet dashboards + inventory builder (8 tools)
+│   ├── manufacturing.py   # Read-only products/BoMs/stock/locations (4 tools)
 │   └── spreadsheet_utils.py  # o-spreadsheet JSON builder helpers
 ├── test_connection.py     # Test script for Odoo connectivity
+├── test_payload_limit.py  # Regression test: 100KB+ payload round-trip
 ├── pyproject.toml        # Project dependencies
 ├── .env                  # Environment variables (gitignored)
 └── README.md
@@ -84,6 +91,7 @@ Each Odoo app has its own handler module inheriting from OdooBase:
 - **TodosHandler** (`todos.py`) - 7 tools for personal to-do list
 - **SpreadsheetsHandler** (`spreadsheets.py`) - 5 tools for Documents spreadsheets
 - **DashboardsHandler** (`dashboards.py`) - 8 tools for spreadsheet dashboards and the inventory dashboard builder
+- **ManufacturingHandler** (`manufacturing.py`) - 4 read-only tools for products, BoMs, stock, and locations
 
 Each handler:
 - Implements tools as async methods
@@ -97,7 +105,7 @@ Each handler:
 The OdooMCPServer class:
 1. **Initialization** - Creates handler instances for each Odoo app
 2. **Connection sharing** - Establishes Odoo connection and shares it among all handlers
-3. **Tool registration** - Registers all 73 tools via `@server.list_tools()` decorator
+3. **Tool registration** - Registers all 77 tools via `@server.list_tools()` decorator
 4. **Tool routing** - Routes tool calls to appropriate handlers via `@server.call_tool()` decorator
 5. **Graceful shutdown** - Handles SIGINT/SIGTERM signals and cleans up resources
 
@@ -211,6 +219,9 @@ Required in `.env` file:
 - `stock.quant` - On-hand stock levels (quantity per product per location)
 - `stock.location` - Stock locations (has `usage`, `warehouse_id`, `complete_name`)
 - `product.product` - Product variants (has `categ_id`, `standard_price`)
+- `product.template` - Product templates (BoMs bind here; variants share a template)
+- `mrp.bom` - Bills of materials (binds to `product_tmpl_id`; `product_id` optionally selects a variant)
+- `mrp.bom.line` - BoM lines (`product_id`, `product_qty`, `product_uom_id`)
 
 ## Message Handling
 
@@ -391,6 +402,19 @@ Odoo spreadsheets and spreadsheet dashboards both store their content as an
 - For live content beyond what the inventory builder generates (other models, lists, global filters), build the o-spreadsheet JSON yourself and pass it through the `data_json` argument of `create_spreadsheet` / `create_dashboard` (or `update_*`). The reliable recipe: read a working dashboard's `spreadsheet_data` from the same instance and mirror its schema `version`, `odooVersion`, sheet skeleton, and pivot/list/figure structures. Odoo's server-side loader (`spreadsheet.dashboard.get_readonly_dashboard()`) is a useful smoke test that a hand-built payload parses.
 
 **Requirements:** the Documents app for spreadsheets, the Dashboards app for dashboards, and the Inventory app (`stock.quant`) for the inventory builder. Each handler returns a clear error if the relevant app/model is unavailable.
+
+## Manufacturing Read Tools
+
+`ManufacturingHandler` (`manufacturing.py`) provides four read-only tools (`list_products`, `get_boms`, `get_stock`, `list_locations`) built to support clear-to-build (CTB) spreadsheet regeneration from live BoM data. Deliberately scoped: no generic `read_records(model, domain, fields)` passthrough (this server fronts an ERP), no writes to product/BoM/stock/location models, no `sudo()` — record rules apply. Each tool returns a markdown header plus a fenced JSON block with the structured rows for machine consumption.
+
+Implementation notes the tools must respect (and that future changes must preserve):
+
+- **Archived records**: `search` silently excludes `active=False` records. Instead of `context={'active_test': False}`, the handler adds `("active", "in", [True, False])` to the domain — mentioning `active` in a domain disables the implicit filter, and this is version-safe over RPC. `read` by id is never filtered by `active`, which is why archived components on active BoM lines appear (with `active: false`) in `get_boms` output rather than vanishing.
+- **Storable vs consumable**: Odoo 18 uses `type='consu'` + boolean `is_storable`. The handler probes `fields_get` and, on older instances without `is_storable`, derives it as `type == 'product'`. Both fields are returned; non-storable products have no quants and are treated as always-available in CTB math.
+- **BoM variant binding**: `mrp.bom` binds to `product_tmpl_id`; `mrp.bom.product_id` (nullable) selects a variant. `has_bom` in `list_products` and BoM filtering in `get_boms` are variant-aware: a template-level BoM counts for all variants, a variant-bound BoM only for its variant. `product_code` on a BoM is the bound variant's `default_code` when set, else the template's.
+- **Quant aggregation**: `get_stock` uses `read_group` with `lazy=False` (required when grouping by multiple fields). Negative quantities pass through unfiltered. If the instance's `stock.quant` has no `value` field, value falls back to `quantity × standard_price`.
+
+**Payload limits (verified 2026-07-25):** the server comfortably handles ≥100 KB tool arguments and results. `test_payload_limit.py` round-trips a 120 KB `data_json` through `update_dashboard` byte-perfect, both handler-level and through the real MCP stdio transport (129 KB request line), and reads it back via `get_dashboard(include_data=true)` (120 KB response). The ~46 KB `create_dashboard` abort observed earlier that day was the MCP *client* failing while emitting large tool-call arguments (LLM output limits), not a server or Odoo limit — which is the argument for generating large payloads server-side (Phase 2 `sync_ctb_dashboard`) rather than streaming them through an LLM.
 
 ## Key Dependencies
 

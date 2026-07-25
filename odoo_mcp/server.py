@@ -20,6 +20,7 @@ from .activities import ActivitiesHandler
 from .todos import TodosHandler
 from .spreadsheets import SpreadsheetsHandler
 from .dashboards import DashboardsHandler
+from .manufacturing import ManufacturingHandler
 
 # Load environment variables
 load_dotenv()
@@ -47,6 +48,7 @@ class OdooMCPServer:
         self.todos = TodosHandler()
         self.spreadsheets = SpreadsheetsHandler()
         self.dashboards = DashboardsHandler()
+        self.manufacturing = ManufacturingHandler()
         # Let the inventory dashboard builder also create Documents spreadsheets.
         self.dashboards.spreadsheets = self.spreadsheets
 
@@ -69,6 +71,7 @@ class OdooMCPServer:
         self.todos.odoo = self.projects.odoo
         self.spreadsheets.odoo = self.projects.odoo
         self.dashboards.odoo = self.projects.odoo
+        self.manufacturing.odoo = self.projects.odoo
 
     def cleanup(self):
         """Cleanup resources on shutdown."""
@@ -1602,6 +1605,78 @@ class OdooMCPServer:
                     }
                 }
             ),
+
+            # Manufacturing read tools (read-only: products, BoMs, stock, locations)
+            Tool(
+                name="list_products",
+                description=(
+                    "List products (product.product) by internal-reference prefix or explicit IDs. "
+                    "Read-only. Returns id, default_code, name, template id, active, type, is_storable, "
+                    "and has_bom (variant-aware: a template-level BoM counts for all variants; a "
+                    "variant-bound BoM counts only for that variant). Set include_archived to also "
+                    "return archived products."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "code_prefix": {"type": "string", "description": "Match products whose internal reference (default_code) starts with this prefix, e.g. 'IB'. Exactly one of code_prefix/ids is required."},
+                        "ids": {"type": "array", "items": {"type": "integer"}, "description": "Explicit product.product IDs. Exactly one of code_prefix/ids is required."},
+                        "include_archived": {"type": "boolean", "description": "Include archived (active=false) products (default: false)", "default": False},
+                        "limit": {"type": "integer", "description": "Maximum number of products to return (default: 200)", "default": 200}
+                    }
+                }
+            ),
+            Tool(
+                name="get_boms",
+                description=(
+                    "Get complete bill-of-materials structures (mrp.bom) for a product set, with lines "
+                    "resolved to component identity (code, name, qty, UoM, active, is_storable) in one call. "
+                    "Read-only. Variant-aware: template-level BoMs apply to all variants; variant-bound BoMs "
+                    "are returned with their product_id set. Archived components on active BoM lines are "
+                    "included by default with active=false."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "product_ids": {"type": "array", "items": {"type": "integer"}, "description": "product.product IDs; resolves via template, then filters variant-bound BoMs to matching variants. Exactly one of product_ids/code_prefix is required."},
+                        "code_prefix": {"type": "string", "description": "Shorthand for product_ids of all products whose default_code starts with this prefix. Exactly one of product_ids/code_prefix is required."},
+                        "include_archived_components": {"type": "boolean", "description": "Include archived components on BoM lines (default: true). Set false for a clean tree.", "default": True}
+                    }
+                }
+            ),
+            Tool(
+                name="get_stock",
+                description=(
+                    "On-hand stock aggregates (stock.quant) for a product set, grouped by product or "
+                    "product+location, with summed quantity and value. Read-only. Negative quantities pass "
+                    "through. Products with zero quants produce no rows (treat absence as zero)."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "product_ids": {"type": "array", "items": {"type": "integer"}, "description": "product.product IDs to aggregate (required)"},
+                        "group_by": {"type": "string", "enum": ["product", "product_location"], "description": "Aggregate per product, or per product per location (default: product)"},
+                        "exclude_location_ids": {"type": "array", "items": {"type": "integer"}, "description": "stock.location IDs to exclude. Mutually exclusive with include_location_ids."},
+                        "include_location_ids": {"type": "array", "items": {"type": "integer"}, "description": "Restrict to these stock.location IDs. Mutually exclusive with exclude_location_ids."},
+                        "usage": {"type": "string", "description": "Location usage filter (default: 'internal')", "default": "internal"}
+                    },
+                    "required": ["product_ids"]
+                }
+            ),
+            Tool(
+                name="list_locations",
+                description=(
+                    "List stock locations (stock.location) with id, complete name, usage, and active flag, "
+                    "so callers can scope stock queries without hardcoding location IDs. Read-only."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "usage": {"type": "string", "description": "Filter by usage, e.g. 'internal', 'customer', 'inventory' (optional)"},
+                        "include_archived": {"type": "boolean", "description": "Include archived locations (default: false)", "default": False}
+                    }
+                }
+            ),
         ]
 
     async def call_tool(self, name: str, arguments: Any) -> list[TextContent]:
@@ -1775,6 +1850,16 @@ class OdooMCPServer:
                 return await self.dashboards.delete_dashboard(arguments)
             elif name == "create_inventory_dashboard":
                 return await self.dashboards.create_inventory_dashboard(arguments)
+
+            # Manufacturing read tools
+            elif name == "list_products":
+                return await self.manufacturing.list_products(arguments)
+            elif name == "get_boms":
+                return await self.manufacturing.get_boms(arguments)
+            elif name == "get_stock":
+                return await self.manufacturing.get_stock(arguments)
+            elif name == "list_locations":
+                return await self.manufacturing.list_locations(arguments)
 
             else:
                 return [TextContent(type="text", text=f"Unknown tool: {name}")]
