@@ -172,6 +172,33 @@ Add to your Cursor MCP settings.
 - **delete_todo**: Permanently delete a to-do from the To-Do app
 - **list_todo_stages**: List all available to-do stages (Inbox, Today, This Week, This Month, Later, Done, etc.) with their sequence and fold status
 
+### Spreadsheets (Documents App)
+
+Manage spreadsheets stored in the Odoo Documents app (`documents.document` with `handler='spreadsheet'`). Content is stored as an o-spreadsheet JSON payload.
+
+- **list_spreadsheets**: List spreadsheets in the Documents app, with an optional name filter
+- **get_spreadsheet**: Get a spreadsheet's metadata and a content summary (sheets, cell/figure counts); optionally return the raw o-spreadsheet JSON
+- **create_spreadsheet**: Create a new spreadsheet (empty, or from supplied o-spreadsheet JSON) in a Documents folder/workspace
+- **update_spreadsheet**: Update a spreadsheet's name and/or o-spreadsheet content
+- **delete_spreadsheet**: Delete a spreadsheet
+
+### Dashboards (Dashboards App)
+
+Manage spreadsheet dashboards from the Odoo Dashboards app (`spreadsheet.dashboard` and `spreadsheet.dashboard.group`), including a dedicated builder for inventory dashboards.
+
+- **list_dashboard_groups**: List dashboard groups (sections)
+- **create_dashboard_group**: Create a new dashboard group (section)
+- **list_dashboards**: List dashboards, optionally filtered by group
+- **get_dashboard**: Get a dashboard's metadata and content summary; optionally return the raw o-spreadsheet JSON
+- **create_dashboard**: Create a new dashboard from raw o-spreadsheet JSON (or empty)
+- **update_dashboard**: Update a dashboard's name, group, and/or o-spreadsheet content
+- **delete_dashboard**: Delete a dashboard
+- **create_inventory_dashboard**: Build a custom inventory dashboard from stock data. Queries on-hand stock (`stock.quant`, internal locations), grouped by product/location/warehouse/category, written into a new dashboard, an existing dashboard (`dashboard_id`), or a Documents spreadsheet. Two modes:
+  - `mode: "snapshot"` (default) — writes a data table plus chart as plain values (robust across Odoo versions); re-run the tool to refresh. Supports `measure` (quantity or value), product/location filters, chart type, and a top-N limit.
+  - `mode: "live"` — writes a **self-refreshing pivot** (quantity + value measures, optional two-level grouping via `sub_group_by`, e.g. location → product) plus a live chart. Both re-query Odoo every time the dashboard is opened — no re-running needed. The payload's schema version is cloned from an existing dashboard on the instance for compatibility.
+
+  Both modes accept `location_ids` to restrict to specific stock locations (e.g. beta/loaner buckets).
+
 ## Supported Apps (Roadmap)
 
 - [x] Projects - interact with projects. Read, create, update, delete, and archive tasks.
@@ -181,6 +208,8 @@ Add to your Cursor MCP settings.
 - [x] Mailing Lists - manage email marketing lists. Create, update, delete lists. Subscribe/unsubscribe contacts. Query subscriptions.
 - [x] Activities - manage scheduled follow-ups and activities. List, create, update, mark done, and delete activities. Link activities to any record.
 - [x] To-Do App - manage personal to-do list. List, create, update, mark done, and delete to-dos. Organize by stages (Today, This Week, etc.).
+- [x] Spreadsheets - manage spreadsheets in the Documents app. List, read, create, update, and delete spreadsheets (o-spreadsheet JSON).
+- [x] Dashboards - manage spreadsheet dashboards. Full CRUD on dashboards and groups, plus a builder for custom inventory dashboards from live stock data.
 
 ... more to come (or you can open a PR and add what you need!)
 
@@ -209,7 +238,10 @@ odoo-mcp/
 │   ├── mailing.py         # Mailing lists operations (10 tools)
 │   ├── users.py           # Users operations (1 tool)
 │   ├── activities.py      # Activities/scheduled follow-ups (7 tools)
-│   └── todos.py           # To-Do app/personal tasks (7 tools)
+│   ├── todos.py           # To-Do app/personal tasks (7 tools)
+│   ├── spreadsheets.py    # Documents spreadsheets (5 tools)
+│   ├── dashboards.py      # Spreadsheet dashboards + inventory builder (8 tools)
+│   └── spreadsheet_utils.py  # o-spreadsheet JSON builder helpers
 ├── test_connection.py     # Test script for Odoo connectivity
 ├── pyproject.toml        # Project dependencies
 ├── .env                  # Environment variables (gitignored)

@@ -18,6 +18,8 @@ from .mailing import MailingHandler
 from .users import UsersHandler
 from .activities import ActivitiesHandler
 from .todos import TodosHandler
+from .spreadsheets import SpreadsheetsHandler
+from .dashboards import DashboardsHandler
 
 # Load environment variables
 load_dotenv()
@@ -43,6 +45,10 @@ class OdooMCPServer:
         self.users = UsersHandler()
         self.activities = ActivitiesHandler()
         self.todos = TodosHandler()
+        self.spreadsheets = SpreadsheetsHandler()
+        self.dashboards = DashboardsHandler()
+        # Let the inventory dashboard builder also create Documents spreadsheets.
+        self.dashboards.spreadsheets = self.spreadsheets
 
         # Register handlers
         self.server.list_tools()(self.list_tools)
@@ -61,6 +67,8 @@ class OdooMCPServer:
         self.users.odoo = self.projects.odoo
         self.activities.odoo = self.projects.odoo
         self.todos.odoo = self.projects.odoo
+        self.spreadsheets.odoo = self.projects.odoo
+        self.dashboards.odoo = self.projects.odoo
 
     def cleanup(self):
         """Cleanup resources on shutdown."""
@@ -1414,6 +1422,186 @@ class OdooMCPServer:
                     "properties": {}
                 }
             ),
+
+            # Spreadsheets (Documents app)
+            Tool(
+                name="list_spreadsheets",
+                description="List spreadsheets in the Odoo Documents app.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "description": "Max spreadsheets to return (default: 50)", "default": 50},
+                        "name": {"type": "string", "description": "Optional case-insensitive name filter"}
+                    }
+                }
+            ),
+            Tool(
+                name="get_spreadsheet",
+                description="Get a spreadsheet's metadata and a summary of its content (sheets, cell/figure counts). Set include_data to also return the raw o-spreadsheet JSON.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_id": {"type": "integer", "description": "The ID of the spreadsheet (documents.document)"},
+                        "include_data": {"type": "boolean", "description": "Include the raw spreadsheet_data JSON (default: false)", "default": False}
+                    },
+                    "required": ["spreadsheet_id"]
+                }
+            ),
+            Tool(
+                name="create_spreadsheet",
+                description="Create a new spreadsheet in the Documents app. Creates an empty spreadsheet unless data_json (o-spreadsheet JSON) is provided. Requires a Documents folder/workspace.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "The spreadsheet name (required)"},
+                        "folder": {"type": "string", "description": "Documents folder/workspace name or numeric ID to create it in. If omitted, a default folder is auto-detected."},
+                        "data_json": {"type": "string", "description": "Optional o-spreadsheet JSON content (string). If omitted, an empty spreadsheet is created."}
+                    },
+                    "required": ["name"]
+                }
+            ),
+            Tool(
+                name="update_spreadsheet",
+                description="Update a spreadsheet's name and/or o-spreadsheet content (data_json).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_id": {"type": "integer", "description": "The ID of the spreadsheet to update"},
+                        "name": {"type": "string", "description": "New name (optional)"},
+                        "data_json": {"type": "string", "description": "New o-spreadsheet JSON content, as a string (optional)"}
+                    },
+                    "required": ["spreadsheet_id"]
+                }
+            ),
+            Tool(
+                name="delete_spreadsheet",
+                description="Delete a spreadsheet from the Documents app.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_id": {"type": "integer", "description": "The ID of the spreadsheet to delete"}
+                    },
+                    "required": ["spreadsheet_id"]
+                }
+            ),
+
+            # Dashboards (Dashboards app)
+            Tool(
+                name="list_dashboard_groups",
+                description="List dashboard groups (sections) in the Odoo Dashboards app.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "description": "Max groups to return (default: 50)", "default": 50}
+                    }
+                }
+            ),
+            Tool(
+                name="create_dashboard_group",
+                description="Create a new dashboard group (section) in the Dashboards app.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "The dashboard group name (required)"}
+                    },
+                    "required": ["name"]
+                }
+            ),
+            Tool(
+                name="list_dashboards",
+                description="List dashboards in the Dashboards app, optionally filtered by group name or ID.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "description": "Max dashboards to return (default: 50)", "default": 50},
+                        "group": {"type": "string", "description": "Optional dashboard group name or numeric ID to filter by"}
+                    }
+                }
+            ),
+            Tool(
+                name="get_dashboard",
+                description="Get a dashboard's metadata and a summary of its content. Set include_data to also return the raw o-spreadsheet JSON.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "dashboard_id": {"type": "integer", "description": "The ID of the dashboard (spreadsheet.dashboard)"},
+                        "include_data": {"type": "boolean", "description": "Include the raw spreadsheet_data JSON (default: false)", "default": False}
+                    },
+                    "required": ["dashboard_id"]
+                }
+            ),
+            Tool(
+                name="create_dashboard",
+                description="Create a new dashboard from raw o-spreadsheet JSON (or empty). To build an inventory dashboard from live stock data, use create_inventory_dashboard instead.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "The dashboard name (required)"},
+                        "group": {"type": "string", "description": "Dashboard group name or numeric ID. Created if it doesn't exist; a default group is used if omitted."},
+                        "data_json": {"type": "string", "description": "Optional o-spreadsheet JSON content (string). If omitted, an empty dashboard is created."}
+                    },
+                    "required": ["name"]
+                }
+            ),
+            Tool(
+                name="update_dashboard",
+                description="Update a dashboard's name, group, and/or o-spreadsheet content (data_json).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "dashboard_id": {"type": "integer", "description": "The ID of the dashboard to update"},
+                        "name": {"type": "string", "description": "New name (optional)"},
+                        "group": {"type": "string", "description": "New dashboard group name or numeric ID (optional)"},
+                        "data_json": {"type": "string", "description": "New o-spreadsheet JSON content, as a string (optional)"}
+                    },
+                    "required": ["dashboard_id"]
+                }
+            ),
+            Tool(
+                name="delete_dashboard",
+                description="Delete a dashboard from the Dashboards app.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "dashboard_id": {"type": "integer", "description": "The ID of the dashboard to delete"}
+                    },
+                    "required": ["dashboard_id"]
+                }
+            ),
+            Tool(
+                name="create_inventory_dashboard",
+                description=(
+                    "Build a custom inventory dashboard from live stock data. Queries on-hand stock "
+                    "(stock.quant, internal locations), grouped by product/location/warehouse/category, "
+                    "written into a new dashboard, an existing dashboard (dashboard_id), or a Documents spreadsheet. "
+                    "mode='snapshot' (default) writes a point-in-time data table as plain values (robust across "
+                    "Odoo versions; re-run to refresh). mode='live' writes a self-refreshing pivot (qty + value "
+                    "measures, optional two-level grouping via sub_group_by) plus a live chart that re-query Odoo "
+                    "every time the dashboard is opened. Requires the Inventory app, plus the Dashboards or "
+                    "Documents app depending on target."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Dashboard/spreadsheet name (default: 'Inventory Dashboard')"},
+                        "mode": {"type": "string", "enum": ["snapshot", "live"], "description": "'snapshot' writes plain values (re-run to refresh); 'live' writes a self-refreshing pivot + chart (default: snapshot)"},
+                        "group_by": {"type": "string", "enum": ["product", "location", "warehouse", "category"], "description": "How to group the inventory (default: product)"},
+                        "sub_group_by": {"type": "string", "enum": ["product", "location", "warehouse", "category"], "description": "Optional second grouping level nested under group_by (live mode only), e.g. location -> product"},
+                        "measure": {"type": "string", "enum": ["quantity", "value"], "description": "'quantity' for on-hand units, 'value' for on-hand value (default: quantity). Live pivots always include both; this picks the chart measure."},
+                        "limit": {"type": "integer", "description": "Snapshot mode: number of top groups to show in the table/chart (default: 30)", "default": 30},
+                        "include_chart": {"type": "boolean", "description": "Include a chart figure (default: true)", "default": True},
+                        "chart_type": {"type": "string", "enum": ["bar", "line", "pie"], "description": "Chart type (default: bar)"},
+                        "target": {"type": "string", "enum": ["dashboard", "spreadsheet"], "description": "Create a Dashboards-app dashboard or a Documents spreadsheet (default: dashboard)"},
+                        "dashboard_id": {"type": "integer", "description": "Write into this existing dashboard instead of creating a new one (replaces its content)"},
+                        "group": {"type": "string", "description": "Dashboard group name or ID (when creating a dashboard). Created if missing."},
+                        "folder": {"type": "string", "description": "Documents folder name or ID (when target=spreadsheet)."},
+                        "product": {"type": "string", "description": "Optional product name filter (case-insensitive)"},
+                        "location": {"type": "string", "description": "Optional location name filter (case-insensitive)"},
+                        "location_ids": {"type": "array", "items": {"type": "integer"}, "description": "Optional list of stock.location IDs to restrict to specific locations"},
+                        "scan_limit": {"type": "integer", "description": "Snapshot mode: max stock records to scan when aggregating (default: 5000)", "default": 5000}
+                    }
+                }
+            ),
         ]
 
     async def call_tool(self, name: str, arguments: Any) -> list[TextContent]:
@@ -1557,6 +1745,36 @@ class OdooMCPServer:
                 return await self.todos.delete_todo(arguments)
             elif name == "list_todo_stages":
                 return await self.todos.list_todo_stages(arguments)
+
+            # Spreadsheets tools
+            elif name == "list_spreadsheets":
+                return await self.spreadsheets.list_spreadsheets(arguments)
+            elif name == "get_spreadsheet":
+                return await self.spreadsheets.get_spreadsheet(arguments)
+            elif name == "create_spreadsheet":
+                return await self.spreadsheets.create_spreadsheet(arguments)
+            elif name == "update_spreadsheet":
+                return await self.spreadsheets.update_spreadsheet(arguments)
+            elif name == "delete_spreadsheet":
+                return await self.spreadsheets.delete_spreadsheet(arguments)
+
+            # Dashboards tools
+            elif name == "list_dashboard_groups":
+                return await self.dashboards.list_dashboard_groups(arguments)
+            elif name == "create_dashboard_group":
+                return await self.dashboards.create_dashboard_group(arguments)
+            elif name == "list_dashboards":
+                return await self.dashboards.list_dashboards(arguments)
+            elif name == "get_dashboard":
+                return await self.dashboards.get_dashboard(arguments)
+            elif name == "create_dashboard":
+                return await self.dashboards.create_dashboard(arguments)
+            elif name == "update_dashboard":
+                return await self.dashboards.update_dashboard(arguments)
+            elif name == "delete_dashboard":
+                return await self.dashboards.delete_dashboard(arguments)
+            elif name == "create_inventory_dashboard":
+                return await self.dashboards.create_inventory_dashboard(arguments)
 
             else:
                 return [TextContent(type="text", text=f"Unknown tool: {name}")]
