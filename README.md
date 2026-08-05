@@ -208,6 +208,20 @@ Scoped read tools for products, bills of materials, stock levels, and locations 
 - **get_stock**: On-hand quantity and value aggregates for a product set, grouped by product or product+location, with location include/exclude scoping. Negative quantities pass through; absence of a row means zero
 - **list_locations**: List stock locations (ID, complete name, usage, active) so callers stop hardcoding location IDs
 
+### Accounting (Read-Only)
+
+Scoped read tools for accounting visibility: invoices and bills (`account.move`), payments (`account.payment`), account balances and AR/AP aging aggregated from journal items (`account.move.line`), and reference data (`account.account`, `account.journal`, `account.tax`). Read-only by design: no writes to any accounting model and no generic model passthrough; record rules apply. Results include a machine-readable JSON block.
+
+- **list_invoices**: List customer invoices, vendor bills, and credit notes with filters (kind, state, payment status, partner, date range). Document-currency amounts plus company-currency signed fields
+- **get_invoice**: Get one invoice/bill/credit note with its line items (product, quantity, price, discount, taxes, subtotal, account)
+- **list_payments**: List customer/vendor payments with filters (direction, partner, state, journal, date range)
+- **get_account_balances**: Trial-balance style debit/credit/balance per account (or rolled up per account type) for a date range — doubles as a P&L summary via `account_types: ["income", "expense"]`
+- **get_aged_balances**: Aged receivables or payables by partner with standard buckets (not due, 1-30, 31-60, 61-90, 90+ days)
+- **list_journal_items**: Raw journal items (the line-level general ledger) filtered by account code/ID, move, journal, partner, date range, or reconciled flag. Reconciled lines share a `matching_number`, supporting move-by-move pairing on reconcilable accounts
+- **list_accounts**: Chart of accounts with code, type, and deprecated/active flags
+- **list_journals**: Accounting journals with code, type, currency, and default account
+- **list_taxes**: Taxes with amount, computation type, and scope
+
 ## Supported Apps (Roadmap)
 
 - [x] Projects - interact with projects. Read, create, update, delete, and archive tasks.
@@ -220,6 +234,7 @@ Scoped read tools for products, bills of materials, stock levels, and locations 
 - [x] Spreadsheets - manage spreadsheets in the Documents app. List, read, create, update, and delete spreadsheets (o-spreadsheet JSON).
 - [x] Dashboards - manage spreadsheet dashboards. Full CRUD on dashboards and groups, plus a builder for custom inventory dashboards from live stock data.
 - [x] Manufacturing (read-only) - list products, read complete BoM structures, aggregate on-hand stock, and list stock locations.
+- [x] Accounting (read-only) - list invoices/bills/credit notes and payments, invoice line detail, account balances (trial balance / P&L), aged receivables/payables, raw journal items, chart of accounts, journals, and taxes.
 
 ... more to come (or you can open a PR and add what you need!)
 
@@ -252,9 +267,11 @@ odoo-mcp/
 │   ├── spreadsheets.py    # Documents spreadsheets (5 tools)
 │   ├── dashboards.py      # Spreadsheet dashboards + inventory builder (8 tools)
 │   ├── manufacturing.py   # Read-only products/BoMs/stock/locations (4 tools)
+│   ├── accounting.py      # Read-only invoices/payments/balances/journal items/reference data (9 tools)
 │   └── spreadsheet_utils.py  # o-spreadsheet JSON builder helpers
 ├── test_connection.py     # Test script for Odoo connectivity
 ├── test_payload_limit.py  # Regression test: 100KB+ payload round-trip
+├── test_accounting.py     # Read-only smoke test for accounting tools
 ├── pyproject.toml        # Project dependencies
 ├── .env                  # Environment variables (gitignored)
 └── README.md

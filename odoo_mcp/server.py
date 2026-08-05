@@ -21,6 +21,7 @@ from .todos import TodosHandler
 from .spreadsheets import SpreadsheetsHandler
 from .dashboards import DashboardsHandler
 from .manufacturing import ManufacturingHandler
+from .accounting import AccountingHandler
 
 # Load environment variables
 load_dotenv()
@@ -49,6 +50,7 @@ class OdooMCPServer:
         self.spreadsheets = SpreadsheetsHandler()
         self.dashboards = DashboardsHandler()
         self.manufacturing = ManufacturingHandler()
+        self.accounting = AccountingHandler()
         # Let the inventory dashboard builder also create Documents spreadsheets.
         self.dashboards.spreadsheets = self.spreadsheets
 
@@ -72,6 +74,7 @@ class OdooMCPServer:
         self.spreadsheets.odoo = self.projects.odoo
         self.dashboards.odoo = self.projects.odoo
         self.manufacturing.odoo = self.projects.odoo
+        self.accounting.odoo = self.projects.odoo
 
     def cleanup(self):
         """Cleanup resources on shutdown."""
@@ -1677,6 +1680,183 @@ class OdooMCPServer:
                     }
                 }
             ),
+
+            # Accounting read tools (read-only: invoices/bills, payments, balances, reference data)
+            Tool(
+                name="list_invoices",
+                description=(
+                    "List customer invoices, vendor bills, and credit notes (account.move) with filters. "
+                    "Read-only. Journal entries are excluded. Amounts are in each document's currency "
+                    "(credit notes show positive amounts); *_signed fields are company currency with "
+                    "direction sign. payment_state 'unpaid' is shorthand for not_paid or partial."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "kind": {"type": "string", "enum": ["customer_invoice", "vendor_bill", "customer_credit_note", "vendor_credit_note", "all"], "description": "Document kind (default: all)"},
+                        "state": {"type": "string", "enum": ["draft", "posted", "cancel", "all"], "description": "Document state (default: posted)"},
+                        "payment_state": {"type": "string", "enum": ["not_paid", "partial", "in_payment", "paid", "reversed", "unpaid"], "description": "Payment status filter; 'unpaid' = not_paid or partial (optional)"},
+                        "partner_id": {"type": "integer", "description": "Exact res.partner ID filter (optional)"},
+                        "partner_name": {"type": "string", "description": "Case-insensitive partner name match (optional)"},
+                        "date_from": {"type": "string", "description": "Earliest invoice_date, YYYY-MM-DD (optional)"},
+                        "date_to": {"type": "string", "description": "Latest invoice_date, YYYY-MM-DD (optional)"},
+                        "limit": {"type": "integer", "description": "Maximum documents to return, newest first (default: 80)", "default": 80}
+                    }
+                }
+            ),
+            Tool(
+                name="get_invoice",
+                description=(
+                    "Get one invoice/bill/credit note (account.move) with its line items: product, "
+                    "description, quantity, unit price, discount, taxes, subtotal/total, and account. "
+                    "Read-only. Section/note lines are excluded unless include_sections is true."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "invoice_id": {"type": "integer", "description": "account.move ID (required)"},
+                        "include_sections": {"type": "boolean", "description": "Also return section/note display lines (default: false)", "default": False}
+                    },
+                    "required": ["invoice_id"]
+                }
+            ),
+            Tool(
+                name="list_payments",
+                description=(
+                    "List payments (account.payment) with filters. Read-only. Amounts are in each "
+                    "payment's currency. state values vary by Odoo version (16/17: draft, posted, "
+                    "cancel; 18: adds in_process, paid) and are passed through unvalidated."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "payment_type": {"type": "string", "enum": ["inbound", "outbound"], "description": "Money in (customer) or out (vendor) (optional)"},
+                        "partner_id": {"type": "integer", "description": "Exact res.partner ID filter (optional)"},
+                        "partner_name": {"type": "string", "description": "Case-insensitive partner name match (optional)"},
+                        "state": {"type": "string", "description": "Payment state filter, version-dependent (optional)"},
+                        "journal_id": {"type": "integer", "description": "account.journal ID filter (optional)"},
+                        "date_from": {"type": "string", "description": "Earliest payment date, YYYY-MM-DD (optional)"},
+                        "date_to": {"type": "string", "description": "Latest payment date, YYYY-MM-DD (optional)"},
+                        "limit": {"type": "integer", "description": "Maximum payments to return, newest first (default: 80)", "default": 80}
+                    }
+                }
+            ),
+            Tool(
+                name="get_account_balances",
+                description=(
+                    "Trial-balance style account balances aggregated from posted journal items "
+                    "(account.move.line) over a date range. Read-only, company currency. "
+                    "balance = debit - credit, so income accounts show negative (credit) balances. "
+                    "Filter account_types to ['income','expense'] and/or group by account_type for a "
+                    "P&L-style summary. Common account_type values: asset_receivable, asset_cash, "
+                    "asset_current, asset_fixed, liability_payable, liability_current, equity, "
+                    "income, income_other, expense, expense_direct_cost, expense_depreciation."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "date_from": {"type": "string", "description": "Start date on journal-item date, YYYY-MM-DD (optional; open start)"},
+                        "date_to": {"type": "string", "description": "End date on journal-item date, YYYY-MM-DD (optional; open end)"},
+                        "account_types": {"type": "array", "items": {"type": "string"}, "description": "Restrict to these account_type values, e.g. ['income','expense'] (optional; requires Odoo 16+)"},
+                        "group_by": {"type": "string", "enum": ["account", "account_type"], "description": "One row per account, or rolled up per account_type (default: account)"},
+                        "include_draft": {"type": "boolean", "description": "Also include draft journal entries (default: false)", "default": False}
+                    }
+                }
+            ),
+            Tool(
+                name="get_aged_balances",
+                description=(
+                    "Aged receivables or payables by partner from open (unreconciled) journal items, "
+                    "bucketed by days overdue vs due date: not_due, 1-30, 31-60, 61-90, 90+. Read-only, "
+                    "company currency; payables are sign-flipped so amounts owed to vendors read "
+                    "positive. A historical as_of_date re-buckets current open items only — it does "
+                    "not reconstruct historical reconciliation state."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "side": {"type": "string", "enum": ["receivable", "payable"], "description": "Aged receivables (customers) or payables (vendors) (required)"},
+                        "as_of_date": {"type": "string", "description": "Bucketing reference date, YYYY-MM-DD (default: today)"},
+                        "partner_id": {"type": "integer", "description": "Restrict to one res.partner ID (optional)"},
+                        "limit": {"type": "integer", "description": "Maximum partners to return, by absolute total desc (default: 100)", "default": 100}
+                    },
+                    "required": ["side"]
+                }
+            ),
+            Tool(
+                name="list_journal_items",
+                description=(
+                    "List raw journal items (account.move.line) with filters — the line-level general "
+                    "ledger. Read-only. debit/credit/balance/amount_residual are company currency; "
+                    "amount_currency is the line's own currency. Reconciled lines share a "
+                    "matching_number, so this supports move-by-move pairing on a reconcilable "
+                    "account. Filter by account code prefix (e.g. '110300'), exact account ID, move, "
+                    "journal, partner, date range, or reconciled flag. Pass move_id to see all lines "
+                    "of one journal entry including counterparts."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "account_code": {"type": "string", "description": "Account code or code prefix, e.g. '110300' or '11'. Mutually exclusive with account_id."},
+                        "account_id": {"type": "integer", "description": "Exact account.account ID. Mutually exclusive with account_code."},
+                        "move_id": {"type": "integer", "description": "Restrict to one journal entry (account.move ID) — returns all its lines (optional)"},
+                        "journal_id": {"type": "integer", "description": "account.journal ID filter (optional)"},
+                        "partner_id": {"type": "integer", "description": "Exact res.partner ID filter (optional)"},
+                        "partner_name": {"type": "string", "description": "Case-insensitive partner name match (optional)"},
+                        "date_from": {"type": "string", "description": "Earliest journal-item date, YYYY-MM-DD (optional)"},
+                        "date_to": {"type": "string", "description": "Latest journal-item date, YYYY-MM-DD (optional)"},
+                        "reconciled": {"type": "boolean", "description": "Only reconciled (true) or only open (false) lines; omit for all (optional)"},
+                        "include_draft": {"type": "boolean", "description": "Also include lines of draft entries (default: false)", "default": False},
+                        "limit": {"type": "integer", "description": "Maximum lines to return, newest first (default: 200)", "default": 200}
+                    }
+                }
+            ),
+            Tool(
+                name="list_accounts",
+                description=(
+                    "List the chart of accounts (account.account) with code, name, account_type, "
+                    "reconcile, deprecated, and active flags. Read-only. Archived/deprecated accounts "
+                    "are returned with their flags rather than hidden. Balances are deliberately "
+                    "excluded — use get_account_balances."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "account_type": {"type": "string", "description": "Filter by account_type, e.g. 'income', 'expense', 'asset_receivable' (optional; requires Odoo 16+)"},
+                        "code_prefix": {"type": "string", "description": "Match accounts whose code starts with this prefix, e.g. '4' (optional)"},
+                        "name": {"type": "string", "description": "Case-insensitive account name match (optional)"},
+                        "limit": {"type": "integer", "description": "Maximum accounts to return, ordered by code (default: 500)", "default": 500}
+                    }
+                }
+            ),
+            Tool(
+                name="list_journals",
+                description=(
+                    "List accounting journals (account.journal) with code, type (sale, purchase, cash, "
+                    "bank, general, ...), currency, and default account. Read-only."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "journal_type": {"type": "string", "description": "Filter by journal type, e.g. 'sale', 'purchase', 'bank', 'cash', 'general' (optional)"},
+                        "include_archived": {"type": "boolean", "description": "Include archived journals (default: false)", "default": False}
+                    }
+                }
+            ),
+            Tool(
+                name="list_taxes",
+                description=(
+                    "List taxes (account.tax) with amount, amount_type (percent, fixed, ...), scope "
+                    "(sale/purchase/none), price_include, and active flag. Read-only."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "type_tax_use": {"type": "string", "enum": ["sale", "purchase", "none"], "description": "Filter by tax scope (optional)"},
+                        "include_archived": {"type": "boolean", "description": "Include archived taxes (default: false)", "default": False}
+                    }
+                }
+            ),
         ]
 
     async def call_tool(self, name: str, arguments: Any) -> list[TextContent]:
@@ -1860,6 +2040,26 @@ class OdooMCPServer:
                 return await self.manufacturing.get_stock(arguments)
             elif name == "list_locations":
                 return await self.manufacturing.list_locations(arguments)
+
+            # Accounting read tools
+            elif name == "list_invoices":
+                return await self.accounting.list_invoices(arguments)
+            elif name == "get_invoice":
+                return await self.accounting.get_invoice(arguments)
+            elif name == "list_payments":
+                return await self.accounting.list_payments(arguments)
+            elif name == "get_account_balances":
+                return await self.accounting.get_account_balances(arguments)
+            elif name == "get_aged_balances":
+                return await self.accounting.get_aged_balances(arguments)
+            elif name == "list_journal_items":
+                return await self.accounting.list_journal_items(arguments)
+            elif name == "list_accounts":
+                return await self.accounting.list_accounts(arguments)
+            elif name == "list_journals":
+                return await self.accounting.list_journals(arguments)
+            elif name == "list_taxes":
+                return await self.accounting.list_taxes(arguments)
 
             else:
                 return [TextContent(type="text", text=f"Unknown tool: {name}")]

@@ -18,6 +18,7 @@ This is a Model Context Protocol (MCP) server for integrating Odoo cloud apps wi
 - **Spreadsheets** (5 tools): Manage spreadsheets in the Documents app (`documents.document`, `handler='spreadsheet'`). List, read, create, update, delete spreadsheets. Content is stored as o-spreadsheet JSON in `spreadsheet_data`.
 - **Dashboards** (8 tools): Manage spreadsheet dashboards (`spreadsheet.dashboard`, `spreadsheet.dashboard.group`). Full CRUD on dashboards and groups. Includes `create_inventory_dashboard`, which builds an on-hand inventory dashboard from `stock.quant` grouped by product/location/warehouse/category — either as a snapshot data table + chart (`mode='snapshot'`, re-run to refresh) or as a self-refreshing live pivot + Odoo-bound chart (`mode='live'`, supports two-level grouping via `sub_group_by`). Can create a new dashboard/spreadsheet or overwrite an existing dashboard via `dashboard_id`.
 - **Manufacturing** (4 tools, read-only): `list_products` (by internal-reference prefix or ids, with archived-record support and a variant-aware `has_bom` flag), `get_boms` (complete BoM structures with lines resolved to component identity), `get_stock` (on-hand quantity/value aggregates with location scoping), `list_locations` (stock locations with usage filter). Deliberately scoped — no generic model passthrough, no writes to product/BoM/stock/location models. Built to support clear-to-build (CTB) spreadsheet regeneration from live BoM data.
+- **Accounting** (9 tools, read-only): `list_invoices`/`get_invoice` (customer invoices, vendor bills, credit notes with line detail), `list_payments`, `get_account_balances` (trial-balance/P&L aggregates from `account.move.line`), `get_aged_balances` (AR/AP aging by partner), `list_journal_items` (raw line-level general ledger with `matching_number` for reconciliation pairing), `list_accounts`, `list_journals`, `list_taxes`. Deliberately scoped — no writes to any accounting model, no generic passthrough. Document-currency amounts plus company-currency `*_signed` fields on documents; balance/aging tools are company currency only.
 
 ## Commands
 
@@ -29,6 +30,9 @@ python test_connection.py
 # Regression test: round-trip a 120KB data_json through update_dashboard,
 # both handler-level and over MCP stdio (creates + deletes a test dashboard)
 python test_payload_limit.py
+
+# Read-only smoke test for all 8 accounting tools against the live instance
+python test_accounting.py
 
 # Run the MCP server
 python -m odoo_mcp.server
@@ -59,9 +63,11 @@ odoo-mcp/
 │   ├── spreadsheets.py    # Documents spreadsheets (5 tools)
 │   ├── dashboards.py      # Spreadsheet dashboards + inventory builder (8 tools)
 │   ├── manufacturing.py   # Read-only products/BoMs/stock/locations (4 tools)
+│   ├── accounting.py      # Read-only invoices/payments/balances/journal items/reference data (9 tools)
 │   └── spreadsheet_utils.py  # o-spreadsheet JSON builder helpers
 ├── test_connection.py     # Test script for Odoo connectivity
 ├── test_payload_limit.py  # Regression test: 100KB+ payload round-trip
+├── test_accounting.py     # Read-only smoke test for accounting tools
 ├── pyproject.toml        # Project dependencies
 ├── .env                  # Environment variables (gitignored)
 └── README.md
@@ -92,6 +98,7 @@ Each Odoo app has its own handler module inheriting from OdooBase:
 - **SpreadsheetsHandler** (`spreadsheets.py`) - 5 tools for Documents spreadsheets
 - **DashboardsHandler** (`dashboards.py`) - 8 tools for spreadsheet dashboards and the inventory dashboard builder
 - **ManufacturingHandler** (`manufacturing.py`) - 4 read-only tools for products, BoMs, stock, and locations
+- **AccountingHandler** (`accounting.py`) - 9 read-only tools for invoices/bills, payments, balances, aging, journal items, and accounting reference data
 
 Each handler:
 - Implements tools as async methods
@@ -105,7 +112,7 @@ Each handler:
 The OdooMCPServer class:
 1. **Initialization** - Creates handler instances for each Odoo app
 2. **Connection sharing** - Establishes Odoo connection and shares it among all handlers
-3. **Tool registration** - Registers all 77 tools via `@server.list_tools()` decorator
+3. **Tool registration** - Registers all 86 tools via `@server.list_tools()` decorator
 4. **Tool routing** - Routes tool calls to appropriate handlers via `@server.call_tool()` decorator
 5. **Graceful shutdown** - Handles SIGINT/SIGTERM signals and cleans up resources
 
@@ -222,6 +229,12 @@ Required in `.env` file:
 - `product.template` - Product templates (BoMs bind here; variants share a template)
 - `mrp.bom` - Bills of materials (binds to `product_tmpl_id`; `product_id` optionally selects a variant)
 - `mrp.bom.line` - BoM lines (`product_id`, `product_qty`, `product_uom_id`)
+- `account.move` - Invoices, bills, credit notes, journal entries (`move_type` distinguishes them; `state`, `payment_state`)
+- `account.move.line` - Journal items (`debit`/`credit`/`balance` in company currency; `parent_state` mirrors the move's state)
+- `account.payment` - Payments (`payment_type` inbound/outbound; `ref` renamed to `memo` in Odoo 18)
+- `account.account` - Chart of accounts (`code`, `account_type` selection since Odoo 16)
+- `account.journal` - Accounting journals (`type`: sale, purchase, cash, bank, general)
+- `account.tax` - Taxes (`amount`, `amount_type`, `type_tax_use`)
 
 ## Message Handling
 
@@ -415,6 +428,22 @@ Implementation notes the tools must respect (and that future changes must preser
 - **Quant aggregation**: `get_stock` uses `read_group` with `lazy=False` (required when grouping by multiple fields). Negative quantities pass through unfiltered. If the instance's `stock.quant` has no `value` field, value falls back to `quantity × standard_price`.
 
 **Payload limits (verified 2026-07-25):** the server comfortably handles ≥100 KB tool arguments and results. `test_payload_limit.py` round-trips a 120 KB `data_json` through `update_dashboard` byte-perfect, both handler-level and through the real MCP stdio transport (129 KB request line), and reads it back via `get_dashboard(include_data=true)` (120 KB response). The ~46 KB `create_dashboard` abort observed earlier that day was the MCP *client* failing while emitting large tool-call arguments (LLM output limits), not a server or Odoo limit — which is the argument for generating large payloads server-side (Phase 2 `sync_ctb_dashboard`) rather than streaming them through an LLM.
+
+## Accounting Read Tools
+
+`AccountingHandler` (`accounting.py`) provides nine read-only tools (`list_invoices`, `get_invoice`, `list_payments`, `get_account_balances`, `get_aged_balances`, `list_journal_items`, `list_accounts`, `list_journals`, `list_taxes`). Deliberately scoped: no writes to any accounting model, no generic passthrough, no `sudo()` — record rules apply. Each tool returns a markdown header plus a fenced JSON block. `python test_accounting.py` smoke-tests all nine against the live instance (read-only, no teardown).
+
+Invariants the tools rely on (and that future changes must preserve):
+
+- **Journal entries excluded**: invoice tools cover only the four document types in `_KIND_TO_MOVE_TYPE` (friendly `kind` values mapping to `move_type`); `move_type='entry'` never appears. Entry-level data is reachable only in aggregate via `get_account_balances`.
+- **Currency policy**: `account.move` amount fields (`amount_total`, `amount_residual`, ...) are document currency; the `*_signed` variants are company currency with direction sign (credit notes negative). Rows return both plus the `currency` name. `debit`/`credit`/`balance`/`amount_residual` on `account.move.line` are company currency, so balance/aging tools are company-currency only.
+- **Sign conventions**: `balance = debit - credit`, so income accounts show negative (credit) balances — stated in output headers. `get_aged_balances` multiplies payable residuals by −1 so amounts owed to vendors read positive (a negative payable total means net vendor prepayment/debit balance, which is legitimate).
+- **read_group grouping**: `get_account_balances` always groups by `account_id` (dotted paths are not valid `read_group` groupby values over RPC) and rolls up to `account_type` in Python after batch-reading `account.account`. Dotted **domains** (`account_id.account_type`) are attempted first with a fallback that resolves account ids via `account.account.search` — a failure degrades to a second query, not an error.
+- **Double-entry invariant**: all lines of a move share the move's `date`, so summing `balance` across all accounts for any date range of posted entries is ~0. `test_accounting.py` asserts this (and per-move via `list_journal_items(move_id=...)`).
+- **Raw journal items**: `list_journal_items` filters by `account_code` prefix by resolving ids via `account.account.search([("code", "=like", prefix%)])` first (never a dotted domain), errors if both `account_code` and `account_id` are passed, and treats the `reconciled` filter as tri-state (applied only when the key is present in arguments, since `False` is a meaningful filter value). `matching_number` is probed and null on instances without it. When the row count hits `limit`, the header says so — callers must not treat a truncated page as the full ledger.
+- **Version probes** (via the `_has_field` fields_get cache): `account.payment.ref` → `memo` rename in Odoo 18 (output key is always `memo`); `account.payment.is_reconciled`; `account.account.deprecated` (16/17) vs `active` (18) — both emitted, null when absent; `account.account.account_type` requires Odoo 16+ (tools return a clear error on older instances); `account.journal.default_account_id`; `account.tax.price_include`. Payment `state` values also drift by version (16/17: draft/posted/cancel; 18 adds in_process/paid) and are passed through unvalidated.
+- **Aging limitation**: `get_aged_balances` buckets **current** open (unreconciled, residual ≠ 0) items by days overdue vs `date_maturity` (falling back to the move date). A historical `as_of_date` re-buckets those current items; it does not reconstruct historical reconciliation state. Disclosed in the tool description and output header. Open items are read unbatched — fine at small-business scale; this is the scaling point if volumes grow.
+- **Multi-company**: no company plumbing (consistent with the rest of the codebase; `ODOO_COMPANY_ID` remains documented-but-unused). Record rules scope results to the user's companies; cross-company totals mix company currencies only if the instance actually runs multiple currencies. `company` is shown in `get_invoice` output only.
 
 ## Key Dependencies
 
