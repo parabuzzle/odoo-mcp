@@ -87,7 +87,7 @@ class SpreadsheetsHandler(OdooBase):
         if not doc_ids:
             return [TextContent(type="text", text="No spreadsheets found.")]
 
-        docs = Doc.read(doc_ids, ["id", "name", "folder_id", "create_date", "write_date"])
+        docs = self.safe_read_records(SPREADSHEET_MODEL, doc_ids, ["id", "name", "folder_id", "create_date", "write_date"])
 
         lines = ["# Spreadsheets\n"]
         for doc in docs:
@@ -113,7 +113,8 @@ class SpreadsheetsHandler(OdooBase):
         Doc = self.odoo.env[SPREADSHEET_MODEL]
 
         try:
-            doc = Doc.read(
+            doc = self.safe_read_records(
+                SPREADSHEET_MODEL,
                 spreadsheet_id,
                 ["id", "name", "handler", "folder_id", "spreadsheet_data",
                  "create_date", "write_date"],

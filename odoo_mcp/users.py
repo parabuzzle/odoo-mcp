@@ -21,7 +21,8 @@ class UsersHandler(OdooBase):
             return [TextContent(type="text", text="No users found.")]
 
         # Read user details
-        users = User.read(
+        users = self.safe_read_records(
+            "res.users",
             user_ids,
             ["name", "id", "login", "email", "partner_id"]
         )

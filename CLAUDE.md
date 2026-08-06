@@ -34,6 +34,11 @@ python test_payload_limit.py
 # Read-only smoke test for all 8 accounting tools against the live instance
 python test_accounting.py
 
+# Offline (no live connection) regression tests for the defensive schema layer:
+# missing-field drops, write-payload validation, kanban_state->state remap,
+# and mobile->phone aliasing. Uses a fake odoo.env.
+python test_schema_layer.py
+
 # Run the MCP server
 python -m odoo_mcp.server
 
@@ -83,6 +88,49 @@ The codebase follows a modular architecture with separate handler modules for ea
 - `connect_odoo()` - Initializes the Odoo connection using odoorpc with JSON-RPC over SSL
 - `cleanup()` - Cleanup resources on shutdown
 - All handler classes inherit from OdooBase
+
+**Defensive schema layer (Odoo version compatibility).** Odoo removes/renames
+model fields between major versions, and hardcoded field lists in `read()`/
+`write()` calls 500 the moment a referenced field disappears. `OdooBase` provides
+a caching `fields_get()`-based layer so this degrades gracefully:
+- `get_model_fields(model)` - cached `fields_get()` per model. The cache is a
+  **class attribute** shared across every handler instance (they share one
+  connection), so it costs one `fields_get` RPC per model for the whole process,
+  not one per call. On RPC failure it caches `{}` and the helpers **fail open**
+  (drop nothing) so hardening never makes things worse than before.
+- `safe_read(model, ids, fields)` -> `(records, warnings)`: `read()` with the
+  field list intersected against the live schema; missing fields are dropped and
+  reported. Used by the affected-model read tools, which surface the warnings in
+  a trailing `## Warnings` section (`warnings_section(...)`).
+- `safe_read_records(model, ids, fields)` -> `records`: drop-in replacement for
+  `Model.read()` (same return shape) that filters missing fields and **logs**
+  the drops instead of returning them. Used across the other read tools whose
+  output isn't structured to carry a warnings section.
+- `invalid_write_fields(model, values)` -> list of payload keys not on the live
+  schema. Write tools call this and fail fast with a clear message naming the
+  offending field instead of surfacing a raw Odoo RPC error.
+- `field_selection(model, field)` -> the live `[(value, label), ...]` for a
+  selection field (used for the kanban_state->state remap and friendly labels).
+
+**Odoo 18 -> 19 field changes handled (Aug 2026 upgrade):**
+- `res.partner.mobile` removed (merged into `phone`). Reads return `phone` only.
+  The `mobile` create/update param is kept and aliased onto `phone` (an explicit
+  `phone` wins). See `contacts.py`.
+- `helpdesk.ticket.ticket_type_id` removed (types converted to tags). Dropped
+  from reads; the create/update `ticket_type_id` param is merged into `tag_ids`.
+  `helpdesk.ticket.kanban_state` also removed - dropped from reads, ignored on
+  writes (both emit a response warning). See `helpdesk.py`.
+- `project.task.kanban_state` removed (replaced by the `state` selection). Reads
+  return `state` (shown as "Status"); the create/update `kanban_state` param is
+  remapped to a live `state` key via `_map_kanban_to_state` (normal->
+  `01_in_progress`, blocked->`02_changes_requested`, done->`03_approved`),
+  resolved against the actual selection at runtime with a warning if unmappable.
+  See `projects.py`.
+
+**Deprecation note:** Odoo 19 deprecates the XML-RPC/JSON-RPC endpoints this
+server uses (via odoorpc, `jsonrpc+ssl`). They keep working through Odoo 21.0 but
+are slated for removal in SaaS 21.1 (winter 2027) / on-prem 22.0 (fall 2028), in
+favor of the new JSON-2 API. A transport migration will be needed before then.
 
 ### Handler Modules
 

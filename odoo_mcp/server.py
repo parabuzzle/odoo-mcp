@@ -250,7 +250,7 @@ class OdooMCPServer:
                         "kanban_state": {
                             "type": "string",
                             "enum": ["normal", "blocked", "done"],
-                            "description": "Kanban state: normal=Ready, blocked=Blocked, done=Done (optional, default: normal)"
+                            "description": "Task status. Odoo 19 replaced kanban_state with the `state` selection; these legacy values are remapped (normal->In Progress, blocked->Changes Requested, done->Approved) using the live state selection (optional)."
                         }
                     },
                     "required": ["project_id", "name"]
@@ -299,7 +299,7 @@ class OdooMCPServer:
                         "kanban_state": {
                             "type": "string",
                             "enum": ["normal", "blocked", "done"],
-                            "description": "New kanban state: normal=Ready, blocked=Blocked, done=Done (optional)"
+                            "description": "Task status. Odoo 19 replaced kanban_state with the `state` selection; these legacy values are remapped (normal->In Progress, blocked->Changes Requested, done->Approved) using the live state selection (optional)."
                         }
                     },
                     "required": ["task_id"]
@@ -558,12 +558,12 @@ class OdooMCPServer:
                         },
                         "ticket_type_id": {
                             "type": "integer",
-                            "description": "Ticket type/category ID (optional)"
+                            "description": "Deprecated: Odoo 19 converted ticket types into tags. Kept for compatibility; the id is merged into tag_ids instead of a ticket_type_id field."
                         },
                         "kanban_state": {
                             "type": "string",
                             "enum": ["normal", "blocked", "done"],
-                            "description": "Kanban state: normal=Ready, blocked=Blocked, done=Done (optional, default: normal)"
+                            "description": "Deprecated: kanban_state was removed from helpdesk.ticket in Odoo 19. Kept for compatibility but ignored."
                         }
                     },
                     "required": ["name", "team_id"]
@@ -611,12 +611,12 @@ class OdooMCPServer:
                         },
                         "ticket_type_id": {
                             "type": "integer",
-                            "description": "New ticket type/category ID (optional). Pass 0 or null to clear."
+                            "description": "Deprecated: Odoo 19 converted ticket types into tags. Kept for compatibility; the id is merged into tag_ids instead of a ticket_type_id field."
                         },
                         "kanban_state": {
                             "type": "string",
                             "enum": ["normal", "blocked", "done"],
-                            "description": "New kanban state: normal=Ready, blocked=Blocked, done=Done (optional)"
+                            "description": "Deprecated: kanban_state was removed from helpdesk.ticket in Odoo 19. Kept for compatibility but ignored."
                         }
                     },
                     "required": ["ticket_id"]
@@ -725,7 +725,7 @@ class OdooMCPServer:
                         },
                         "mobile": {
                             "type": "string",
-                            "description": "Mobile number (optional)"
+                            "description": "Deprecated: Odoo 19 merged mobile into phone. Kept for compatibility; aliased onto 'phone' unless 'phone' is also provided."
                         },
                         "is_company": {
                             "type": "boolean",
@@ -820,7 +820,7 @@ class OdooMCPServer:
                         },
                         "mobile": {
                             "type": "string",
-                            "description": "New mobile number (optional)"
+                            "description": "Deprecated: Odoo 19 merged mobile into phone. Kept for compatibility; aliased onto 'phone' unless 'phone' is also provided."
                         },
                         "street": {
                             "type": "string",

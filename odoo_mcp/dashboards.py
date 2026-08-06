@@ -98,7 +98,7 @@ class DashboardsHandler(OdooBase):
         if not ids:
             return [TextContent(type="text", text="No dashboard groups found.")]
 
-        groups = Group.read(ids, ["id", "name", "sequence", "dashboard_ids"])
+        groups = self.safe_read_records(DASHBOARD_GROUP_MODEL, ids, ["id", "name", "sequence", "dashboard_ids"])
         lines = ["# Dashboard Groups\n"]
         for g in sorted(groups, key=lambda x: x.get("sequence", 0)):
             lines.append(
@@ -151,7 +151,7 @@ class DashboardsHandler(OdooBase):
         if not ids:
             return [TextContent(type="text", text="No dashboards found.")]
 
-        dashboards = Dashboard.read(ids, ["id", "name", "dashboard_group_id", "sequence"])
+        dashboards = self.safe_read_records(DASHBOARD_MODEL, ids, ["id", "name", "dashboard_group_id", "sequence"])
         lines = ["# Dashboards\n"]
         for d in dashboards:
             grp = d.get("dashboard_group_id")
@@ -172,7 +172,8 @@ class DashboardsHandler(OdooBase):
 
         Dashboard = self.odoo.env[DASHBOARD_MODEL]
         try:
-            d = Dashboard.read(
+            d = self.safe_read_records(
+                DASHBOARD_MODEL,
                 dashboard_id,
                 ["id", "name", "dashboard_group_id", "spreadsheet_data"],
             )[0]
@@ -394,7 +395,7 @@ class DashboardsHandler(OdooBase):
             loc_ids = list({r["location_id"][0] for r in records if r.get("location_id")})
             if loc_ids:
                 Location = self.odoo.env["stock.location"]
-                for loc in Location.read(loc_ids, ["id", "warehouse_id"]):
+                for loc in self.safe_read_records("stock.location", loc_ids, ["id", "warehouse_id"]):
                     wh = loc.get("warehouse_id")
                     loc_to_wh[loc["id"]] = tuple(wh) if wh else None
 

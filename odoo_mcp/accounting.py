@@ -248,7 +248,7 @@ class AccountingHandler(OdooBase):
         tax_names = {}
         if line_ids:
             MoveLine = self.odoo.env["account.move.line"]
-            line_recs = MoveLine.read(line_ids, [
+            line_recs = self.safe_read_records("account.move.line", line_ids, [
                 "id", "display_type", "product_id", "name", "quantity",
                 "product_uom_id", "price_unit", "discount",
                 "price_subtotal", "price_total", "tax_ids", "account_id",
@@ -256,7 +256,7 @@ class AccountingHandler(OdooBase):
             tax_ids = sorted({tid for lr in line_recs for tid in (lr.get("tax_ids") or [])})
             if tax_ids:
                 Tax = self.odoo.env["account.tax"]
-                for t in Tax.read(tax_ids, ["id", "name"]):
+                for t in self.safe_read_records("account.tax", tax_ids, ["id", "name"]):
                     tax_names[t["id"]] = t["name"]
             for lr in line_recs:
                 display_type = _clean(lr.get("display_type"))
@@ -542,8 +542,8 @@ class AccountingHandler(OdooBase):
         sign = -1.0 if side == "payable" else 1.0
         partners = {}
         totals = {"total": 0.0, **{b: 0.0 for b in _AGING_BUCKETS}}
-        lines = Line.read(
-            line_ids, ["partner_id", "amount_residual", "date_maturity", "date"]
+        lines = self.safe_read_records(
+            "account.move.line", line_ids, ["partner_id", "amount_residual", "date_maturity", "date"]
         ) if line_ids else []
         for line in lines:
             amount = (line.get("amount_residual") or 0.0) * sign

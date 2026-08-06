@@ -63,11 +63,13 @@ class HelpdeskHandler(OdooBase):
         if not ticket_ids:
             return [TextContent(type="text", text="No tickets found.")]
 
-        # Read ticket details
-        tickets = Ticket.read(
+        # Read ticket details. Odoo 19 removed ticket_type_id (types became tags)
+        # and kanban_state; both are gone from the field list.
+        tickets, warnings = self.safe_read(
+            "helpdesk.ticket",
             ticket_ids,
             ["name", "id", "partner_id", "partner_name", "partner_email", "partner_phone", "user_id", "stage_id",
-             "priority", "create_date", "tag_ids", "sla_deadline", "ticket_type_id", "kanban_state"]
+             "priority", "create_date", "tag_ids", "sla_deadline"]
         )
 
         # Format output
@@ -102,31 +104,20 @@ class HelpdeskHandler(OdooBase):
             # Get SLA deadline
             sla_deadline = ticket.get("sla_deadline", "No SLA")
 
-            # Get ticket type
-            ticket_type_id = ticket.get("ticket_type_id")
-            ticket_type = ticket_type_id[1] if ticket_type_id else "No type"
-
-            # Get kanban state
-            kanban_state = ticket.get("kanban_state", "normal")
-            kanban_map = {"normal": "Ready", "blocked": "Blocked", "done": "Done"}
-            kanban_str = kanban_map.get(kanban_state, kanban_state)
-
             output_lines.append(
                 f"## {ticket['name']} (ID: {ticket['id']})\n"
                 f"- Customer: {customer}\n"
                 f"- Email: {partner_email}\n"
                 f"- Phone: {partner_phone}\n"
                 f"- Stage: {stage}\n"
-                f"- Kanban State: {kanban_str}\n"
                 f"- Priority: {priority_str}\n"
-                f"- Type: {ticket_type}\n"
                 f"- Tags: {tags_str}\n"
                 f"- SLA Deadline: {sla_deadline}\n"
                 f"- Assigned to: {assigned}\n"
                 f"- Created: {create_date}\n"
             )
 
-        return [TextContent(type="text", text="\n".join(output_lines))]
+        return [TextContent(type="text", text="\n".join(output_lines) + self.warnings_section(warnings))]
 
     async def get_ticket(self, arguments: dict) -> list[TextContent]:
         """Get a specific ticket with full details."""
@@ -138,13 +129,15 @@ class HelpdeskHandler(OdooBase):
         # Access helpdesk.ticket model
         Ticket = self.odoo.env["helpdesk.ticket"]
 
-        # Read ticket with full details
-        ticket = Ticket.read(
+        # Read ticket with full details. Odoo 19 removed ticket_type_id (types
+        # became tags) and kanban_state; both are gone from the field list.
+        tickets, warnings = self.safe_read(
+            "helpdesk.ticket",
             ticket_id,
             ["name", "id", "description", "partner_id", "partner_name", "partner_email", "partner_phone",
-             "user_id", "stage_id", "priority", "create_date", "team_id", "tag_ids", "sla_deadline",
-             "ticket_type_id", "kanban_state"]
-        )[0]
+             "user_id", "stage_id", "priority", "create_date", "team_id", "tag_ids", "sla_deadline"]
+        )
+        ticket = tickets[0]
 
         partner_id = ticket.get("partner_id")
         customer = partner_id[1] if partner_id else ticket.get("partner_name", "No customer")
@@ -179,15 +172,6 @@ class HelpdeskHandler(OdooBase):
         # Get SLA deadline
         sla_deadline = ticket.get("sla_deadline", "No SLA")
 
-        # Get ticket type
-        ticket_type_id = ticket.get("ticket_type_id")
-        ticket_type = ticket_type_id[1] if ticket_type_id else "No type"
-
-        # Get kanban state
-        kanban_state = ticket.get("kanban_state", "normal")
-        kanban_map = {"normal": "Ready", "blocked": "Blocked", "done": "Done"}
-        kanban_str = kanban_map.get(kanban_state, kanban_state)
-
         output = (
             f"# {ticket['name']}\n\n"
             f"**ID:** {ticket['id']}  \n"
@@ -196,9 +180,7 @@ class HelpdeskHandler(OdooBase):
             f"**Phone:** {partner_phone}  \n"
             f"**Team:** {team}  \n"
             f"**Stage:** {stage}  \n"
-            f"**Kanban State:** {kanban_str}  \n"
             f"**Priority:** {priority_str}  \n"
-            f"**Type:** {ticket_type}  \n"
             f"**Tags:** {tags_str}  \n"
             f"**SLA Deadline:** {sla_deadline}  \n"
             f"**Assigned to:** {assigned}  \n"
@@ -206,7 +188,7 @@ class HelpdeskHandler(OdooBase):
             f"## Description\n\n{description}"
         )
 
-        return [TextContent(type="text", text=output)]
+        return [TextContent(type="text", text=output + self.warnings_section(warnings))]
 
     async def create_ticket(self, arguments: dict) -> list[TextContent]:
         """Create a new helpdesk ticket."""
@@ -232,17 +214,34 @@ class HelpdeskHandler(OdooBase):
         if "priority" in arguments:
             ticket_values["priority"] = arguments["priority"]
 
-        # Handle tags
-        if "tag_ids" in arguments and arguments["tag_ids"]:
-            ticket_values["tag_ids"] = [(6, 0, arguments["tag_ids"])]  # Odoo many2many replace syntax
+        remap_warnings = []
 
-        # Handle ticket type
-        if "ticket_type_id" in arguments and arguments["ticket_type_id"]:
-            ticket_values["ticket_type_id"] = arguments["ticket_type_id"]
+        # Handle tags. Odoo 19 converted ticket types into tags, so a supplied
+        # ticket_type_id is merged into the tag set rather than written to the
+        # (now removed) ticket_type_id field.
+        tag_ids = list(arguments["tag_ids"]) if arguments.get("tag_ids") else []
+        if arguments.get("ticket_type_id"):
+            tag_ids.append(arguments["ticket_type_id"])
+            remap_warnings.append(
+                "ticket_type_id was removed in Odoo 19 (ticket types became tags); "
+                "the supplied id was merged into tag_ids"
+            )
+        if tag_ids:
+            ticket_values["tag_ids"] = [(6, 0, tag_ids)]  # Odoo many2many replace syntax
 
-        # Handle kanban state
-        if "kanban_state" in arguments:
-            ticket_values["kanban_state"] = arguments["kanban_state"]
+        # kanban_state was removed from helpdesk.ticket in Odoo 19; ignore it.
+        if arguments.get("kanban_state") is not None:
+            remap_warnings.append(
+                "kanban_state was removed from helpdesk.ticket in Odoo 19 and was ignored"
+            )
+
+        # Validate payload against the live schema before writing.
+        invalid = self.invalid_write_fields("helpdesk.ticket", ticket_values)
+        if invalid:
+            return [TextContent(type="text", text=(
+                f"Error: unknown field(s) for helpdesk.ticket: {', '.join(invalid)}. "
+                "They may have been removed in this Odoo version."
+            ))]
 
         # Create the ticket
         Ticket = self.odoo.env["helpdesk.ticket"]
@@ -264,7 +263,7 @@ class HelpdeskHandler(OdooBase):
             f"- Stage: {stage}\n"
         )
 
-        return [TextContent(type="text", text=output)]
+        return [TextContent(type="text", text=output + self.warnings_section(remap_warnings))]
 
     async def update_ticket(self, arguments: dict) -> list[TextContent]:
         """Update an existing helpdesk ticket."""
@@ -295,20 +294,44 @@ class HelpdeskHandler(OdooBase):
         if "partner_id" in arguments:
             update_values["partner_id"] = arguments["partner_id"] if arguments["partner_id"] else False
 
-        # Handle tags
+        remap_warnings = []
+
+        # Handle tags. Odoo 19 turned ticket types into tags, so a supplied
+        # ticket_type_id is merged into tag_ids rather than written to the
+        # removed ticket_type_id field.
+        type_tag = arguments.get("ticket_type_id")
         if "tag_ids" in arguments:
-            update_values["tag_ids"] = [(6, 0, arguments["tag_ids"])] if arguments["tag_ids"] else [(5, 0, 0)]
+            tag_ids = list(arguments["tag_ids"]) if arguments["tag_ids"] else []
+            if type_tag:
+                tag_ids.append(type_tag)
+                remap_warnings.append(
+                    "ticket_type_id was removed in Odoo 19 (types became tags); merged into tag_ids"
+                )
+            update_values["tag_ids"] = [(6, 0, tag_ids)] if tag_ids else [(5, 0, 0)]
+        elif type_tag:
+            # Only a ticket type was supplied: link it as a tag without
+            # disturbing the ticket's existing tags.
+            update_values["tag_ids"] = [(4, type_tag)]
+            remap_warnings.append(
+                "ticket_type_id was removed in Odoo 19 (types became tags); added to tag_ids"
+            )
 
-        # Handle ticket type
-        if "ticket_type_id" in arguments:
-            update_values["ticket_type_id"] = arguments["ticket_type_id"] if arguments["ticket_type_id"] else False
-
-        # Handle kanban state
+        # kanban_state was removed from helpdesk.ticket in Odoo 19; ignore it.
         if "kanban_state" in arguments:
-            update_values["kanban_state"] = arguments["kanban_state"]
+            remap_warnings.append(
+                "kanban_state was removed from helpdesk.ticket in Odoo 19 and was ignored"
+            )
 
         if not update_values:
             return [TextContent(type="text", text="Error: No fields to update provided")]
+
+        # Validate payload against the live schema before writing.
+        invalid = self.invalid_write_fields("helpdesk.ticket", update_values)
+        if invalid:
+            return [TextContent(type="text", text=(
+                f"Error: unknown field(s) for helpdesk.ticket: {', '.join(invalid)}. "
+                "They may have been removed in this Odoo version."
+            ))]
 
         # Update the ticket
         Ticket = self.odoo.env["helpdesk.ticket"]
@@ -335,7 +358,7 @@ class HelpdeskHandler(OdooBase):
             f"- Assigned to: {assigned}\n"
         )
 
-        return [TextContent(type="text", text=output)]
+        return [TextContent(type="text", text=output + self.warnings_section(remap_warnings))]
 
     async def close_ticket(self, arguments: dict) -> list[TextContent]:
         """Close a helpdesk ticket."""

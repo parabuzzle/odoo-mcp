@@ -22,7 +22,8 @@ class MailingHandler(OdooBase):
             return [TextContent(type="text", text="No mailing lists found.")]
 
         # Read mailing list details
-        lists = MailingList.read(
+        lists = self.safe_read_records(
+            "mailing.list",
             list_ids,
             ["name", "id", "contact_count"]
         )
@@ -50,7 +51,8 @@ class MailingHandler(OdooBase):
         MailingList = self.odoo.env["mailing.list"]
 
         # Read mailing list with details
-        ml = MailingList.read(
+        ml = self.safe_read_records(
+            "mailing.list",
             list_id,
             ["name", "id", "contact_count"]
         )[0]
@@ -68,7 +70,8 @@ class MailingHandler(OdooBase):
         subscription_ids = MailingSubscription.search([("list_id", "=", list_id)])
 
         if subscription_ids:
-            subscriptions = MailingSubscription.read(
+            subscriptions = self.safe_read_records(
+                "mailing.subscription",
                 subscription_ids,
                 ["contact_id", "opt_out", "opt_out_datetime"]
             )
@@ -78,7 +81,7 @@ class MailingHandler(OdooBase):
             contact_ids = [s["contact_id"][0] for s in subscriptions if s.get("contact_id")]
             contacts = {}
             if contact_ids:
-                contact_records = MailingContact.read(contact_ids, ["id", "name", "email"])
+                contact_records = self.safe_read_records("mailing.contact", contact_ids, ["id", "name", "email"])
                 contacts = {c["id"]: c for c in contact_records}
 
             # Separate active and opted-out subscribers
@@ -131,7 +134,7 @@ class MailingHandler(OdooBase):
         new_list_id = MailingList.create({"name": name})
 
         # Read the created list to return details
-        ml = MailingList.read(new_list_id, ["name", "id"])[0]
+        ml = self.safe_read_records("mailing.list", new_list_id, ["name", "id"])[0]
 
         output = (
             f"# Mailing List Created Successfully\n\n"
@@ -154,7 +157,7 @@ class MailingHandler(OdooBase):
         MailingList.write(list_id, {"name": name})
 
         # Read the updated list to return details
-        ml = MailingList.read(list_id, ["name", "id", "contact_count"])[0]
+        ml = self.safe_read_records("mailing.list", list_id, ["name", "id", "contact_count"])[0]
 
         contact_count = ml.get("contact_count", 0)
 
@@ -175,7 +178,7 @@ class MailingHandler(OdooBase):
 
         # Get list details before deletion
         MailingList = self.odoo.env["mailing.list"]
-        ml = MailingList.read(list_id, ["name", "id"])[0]
+        ml = self.safe_read_records("mailing.list", list_id, ["name", "id"])[0]
         list_name = ml["name"]
 
         # Delete the mailing list
@@ -310,7 +313,7 @@ class MailingHandler(OdooBase):
             return [TextContent(type="text", text=f"No mailing contact found with email: {email}")]
 
         # Get the contact and their lists
-        contacts = MailingContact.read(contact_ids, ["name", "email", "list_ids"])
+        contacts = self.safe_read_records("mailing.contact", contact_ids, ["name", "email", "list_ids"])
         contact = contacts[0]
         contact_name = contact["name"]
         list_ids = contact.get("list_ids", [])
@@ -319,7 +322,7 @@ class MailingHandler(OdooBase):
 
         if list_ids:
             MailingList = self.odoo.env["mailing.list"]
-            lists = MailingList.read(list_ids, ["name", "id"])
+            lists = self.safe_read_records("mailing.list", list_ids, ["name", "id"])
             output += f"Subscribed to {len(lists)} mailing list(s):\n\n"
             for ml in lists:
                 output += f"- {ml['name']} (ID: {ml['id']})\n"

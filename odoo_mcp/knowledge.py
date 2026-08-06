@@ -27,7 +27,8 @@ class KnowledgeHandler(OdooBase):
             return [TextContent(type="text", text="No articles found.")]
 
         # Read article details
-        articles = Article.read(
+        articles = self.safe_read_records(
+            "knowledge.article",
             article_ids,
             ["name", "id", "parent_id", "write_date", "active"]
         )
@@ -60,7 +61,8 @@ class KnowledgeHandler(OdooBase):
         Article = self.odoo.env["knowledge.article"]
 
         # Read article with full details
-        article = Article.read(
+        article = self.safe_read_records(
+            "knowledge.article",
             article_id,
             ["name", "id", "body", "parent_id", "write_date", "active"]
         )[0]
@@ -106,7 +108,7 @@ class KnowledgeHandler(OdooBase):
         new_article_id = Article.create(article_values)
 
         # Read the created article to return details
-        article = Article.read(new_article_id, ["name", "id", "parent_id"])[0]
+        article = self.safe_read_records("knowledge.article", new_article_id, ["name", "id", "parent_id"])[0]
 
         parent_id_field = article.get("parent_id")
         parent = parent_id_field[1] if parent_id_field else "No parent"
@@ -146,7 +148,7 @@ class KnowledgeHandler(OdooBase):
         Article.write(article_id, update_values)
 
         # Read the updated article to return details
-        article = Article.read(article_id, ["name", "id", "parent_id"])[0]
+        article = self.safe_read_records("knowledge.article", article_id, ["name", "id", "parent_id"])[0]
 
         parent_id_field = article.get("parent_id")
         parent = parent_id_field[1] if parent_id_field else "No parent"
@@ -168,7 +170,7 @@ class KnowledgeHandler(OdooBase):
 
         # Get article details before deletion
         Article = self.odoo.env["knowledge.article"]
-        article = Article.read(article_id, ["name", "id"])[0]
+        article = self.safe_read_records("knowledge.article", article_id, ["name", "id"])[0]
         article_name = article["name"]
 
         # Delete the article
@@ -193,7 +195,7 @@ class KnowledgeHandler(OdooBase):
         Article.write(article_id, {"active": False})
 
         # Read the archived article to return details
-        article = Article.read(article_id, ["name", "id"])[0]
+        article = self.safe_read_records("knowledge.article", article_id, ["name", "id"])[0]
 
         output = (
             f"# Article Archived Successfully\n\n"

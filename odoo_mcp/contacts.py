@@ -28,10 +28,11 @@ class ContactsHandler(OdooBase):
         if not contact_ids:
             return [TextContent(type="text", text="No contacts found.")]
 
-        # Read contact details
-        contacts = Partner.read(
+        # Read contact details (mobile was merged into phone in Odoo 19)
+        contacts, warnings = self.safe_read(
+            "res.partner",
             contact_ids,
-            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id", "active", "category_id"]
+            ["name", "id", "email", "phone", "is_company", "parent_id", "active", "category_id"]
         )
 
         # Format output
@@ -39,7 +40,7 @@ class ContactsHandler(OdooBase):
         for contact in contacts:
             contact_type = "Company" if contact.get("is_company") else "Individual"
             email = contact.get("email") or "No email"
-            phone = contact.get("phone") or contact.get("mobile") or "No phone"
+            phone = contact.get("phone") or "No phone"
             parent_id = contact.get("parent_id")
             parent = parent_id[1] if parent_id else "No parent company"
             active = "Active" if contact.get("active", True) else "Archived"
@@ -66,7 +67,7 @@ class ContactsHandler(OdooBase):
                 output_lines.append(f"- Tags: {tags}\n")
             output_lines.append("")
 
-        return [TextContent(type="text", text="\n".join(output_lines))]
+        return [TextContent(type="text", text="\n".join(output_lines) + self.warnings_section(warnings))]
 
     async def get_contact(self, arguments: dict) -> list[TextContent]:
         """Get a specific contact with full details."""
@@ -78,18 +79,19 @@ class ContactsHandler(OdooBase):
         # Access res.partner model
         Partner = self.odoo.env["res.partner"]
 
-        # Read contact with full details
-        contact = Partner.read(
+        # Read contact with full details (mobile was merged into phone in Odoo 19)
+        contacts, warnings = self.safe_read(
+            "res.partner",
             contact_id,
-            ["name", "id", "email", "phone", "mobile", "website", "is_company", "parent_id",
+            ["name", "id", "email", "phone", "website", "is_company", "parent_id",
              "street", "street2", "city", "state_id", "zip", "country_id", "active",
              "category_id", "comment", "vat", "title", "function", "ref"]
-        )[0]
+        )
+        contact = contacts[0]
 
         contact_type = "Company" if contact.get("is_company") else "Individual"
         email = contact.get("email") or "No email"
         phone = contact.get("phone") or "No phone"
-        mobile = contact.get("mobile") or "No mobile"
         website = contact.get("website") or "No website"
         parent_id = contact.get("parent_id")
         parent = parent_id[1] if parent_id else "No parent company"
@@ -140,7 +142,6 @@ class ContactsHandler(OdooBase):
             f"**Status:** {active}  \n"
             f"**Email:** {email}  \n"
             f"**Phone:** {phone}  \n"
-            f"**Mobile:** {mobile}  \n"
             f"**Website:** {website}  \n"
         )
         if not contact.get("is_company"):
@@ -154,7 +155,7 @@ class ContactsHandler(OdooBase):
         output += f"\n## Address\n\n{address}\n\n"
         output += f"## Internal Notes\n\n{notes}"
 
-        return [TextContent(type="text", text=output)]
+        return [TextContent(type="text", text=output + self.warnings_section(warnings))]
 
     async def search_contacts(self, arguments: dict) -> list[TextContent]:
         """Search contacts by name, email, or company."""
@@ -182,10 +183,11 @@ class ContactsHandler(OdooBase):
         if not contact_ids:
             return [TextContent(type="text", text=f"No contacts found matching '{query}'.")]
 
-        # Read contact details
-        contacts = Partner.read(
+        # Read contact details (mobile was merged into phone in Odoo 19)
+        contacts, warnings = self.safe_read(
+            "res.partner",
             contact_ids,
-            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id", "active", "category_id"]
+            ["name", "id", "email", "phone", "is_company", "parent_id", "active", "category_id"]
         )
 
         # Format output
@@ -193,7 +195,7 @@ class ContactsHandler(OdooBase):
         for contact in contacts:
             contact_type = "Company" if contact.get("is_company") else "Individual"
             email = contact.get("email") or "No email"
-            phone = contact.get("phone") or contact.get("mobile") or "No phone"
+            phone = contact.get("phone") or "No phone"
             parent_id = contact.get("parent_id")
             parent = parent_id[1] if parent_id else "No parent company"
             active = "Active" if contact.get("active", True) else "Archived"
@@ -220,7 +222,7 @@ class ContactsHandler(OdooBase):
                 output_lines.append(f"- Tags: {tags}\n")
             output_lines.append("")
 
-        return [TextContent(type="text", text="\n".join(output_lines))]
+        return [TextContent(type="text", text="\n".join(output_lines) + self.warnings_section(warnings))]
 
     async def search_contacts_by_tag(self, arguments: dict) -> list[TextContent]:
         """Search contacts by tag name."""
@@ -252,10 +254,11 @@ class ContactsHandler(OdooBase):
         if not contact_ids:
             return [TextContent(type="text", text=f"No contacts found with tag '{tag_name_actual}'.")]
 
-        # Read contact details
-        contacts = Partner.read(
+        # Read contact details (mobile was merged into phone in Odoo 19)
+        contacts, warnings = self.safe_read(
+            "res.partner",
             contact_ids,
-            ["name", "id", "email", "phone", "mobile", "is_company", "parent_id", "active", "category_id"]
+            ["name", "id", "email", "phone", "is_company", "parent_id", "active", "category_id"]
         )
 
         # Format output
@@ -263,7 +266,7 @@ class ContactsHandler(OdooBase):
         for contact in contacts:
             contact_type = "Company" if contact.get("is_company") else "Individual"
             email = contact.get("email") or "No email"
-            phone = contact.get("phone") or contact.get("mobile") or "No phone"
+            phone = contact.get("phone") or "No phone"
             parent_id = contact.get("parent_id")
             parent = parent_id[1] if parent_id else "No parent company"
             active = "Active" if contact.get("active", True) else "Archived"
@@ -289,7 +292,7 @@ class ContactsHandler(OdooBase):
                 output_lines.append(f"- Tags: {tags}\n")
             output_lines.append("")
 
-        return [TextContent(type="text", text="\n".join(output_lines))]
+        return [TextContent(type="text", text="\n".join(output_lines) + self.warnings_section(warnings))]
 
     async def create_contact(self, arguments: dict) -> list[TextContent]:
         """Create a new contact."""
@@ -310,8 +313,11 @@ class ContactsHandler(OdooBase):
         if "phone" in arguments and arguments["phone"]:
             contact_values["phone"] = arguments["phone"]
 
-        if "mobile" in arguments and arguments["mobile"]:
-            contact_values["mobile"] = arguments["mobile"]
+        # Odoo 19 removed res.partner.mobile (merged into phone). The 'mobile'
+        # param is kept for backward compatibility and aliased onto phone, but
+        # an explicitly-provided phone always wins.
+        if "mobile" in arguments and arguments["mobile"] and "phone" not in contact_values:
+            contact_values["phone"] = arguments["mobile"]
 
         if "is_company" in arguments:
             contact_values["is_company"] = arguments["is_company"]
@@ -386,6 +392,15 @@ class ContactsHandler(OdooBase):
             except Exception as e:
                 return [TextContent(type="text", text=f"Error downloading image: {str(e)}")]
 
+        # Validate payload against the live schema before writing so a removed
+        # field fails fast with a clear message instead of a raw RPC error.
+        invalid = self.invalid_write_fields("res.partner", contact_values)
+        if invalid:
+            return [TextContent(type="text", text=(
+                f"Error: unknown field(s) for res.partner: {', '.join(invalid)}. "
+                "They may have been removed in this Odoo version."
+            ))]
+
         # Create the contact
         Partner = self.odoo.env["res.partner"]
         new_contact_id = Partner.create(contact_values)
@@ -427,8 +442,10 @@ class ContactsHandler(OdooBase):
         if "phone" in arguments:
             update_values["phone"] = arguments["phone"]
 
-        if "mobile" in arguments:
-            update_values["mobile"] = arguments["mobile"]
+        # Odoo 19 removed res.partner.mobile (merged into phone). Alias the
+        # deprecated 'mobile' param onto phone unless phone was also provided.
+        if "mobile" in arguments and "phone" not in arguments:
+            update_values["phone"] = arguments["mobile"]
 
         if "street" in arguments:
             update_values["street"] = arguments["street"]
@@ -504,23 +521,29 @@ class ContactsHandler(OdooBase):
         if not update_values:
             return [TextContent(type="text", text="Error: No fields to update provided")]
 
+        # Validate payload against the live schema before writing.
+        invalid = self.invalid_write_fields("res.partner", update_values)
+        if invalid:
+            return [TextContent(type="text", text=(
+                f"Error: unknown field(s) for res.partner: {', '.join(invalid)}. "
+                "They may have been removed in this Odoo version."
+            ))]
+
         # Update the contact
         Partner = self.odoo.env["res.partner"]
         Partner.write(contact_id, update_values)
 
-        # Read the updated contact to return details
-        contact = Partner.read(contact_id, ["name", "id", "email", "phone", "mobile"])[0]
+        # Read the updated contact to return details (mobile merged into phone in Odoo 19)
+        contact = Partner.read(contact_id, ["name", "id", "email", "phone"])[0]
 
         email = contact.get("email") or "No email"
         phone = contact.get("phone") or "No phone"
-        mobile = contact.get("mobile") or "No mobile"
 
         output = (
             f"# Contact Updated Successfully\n\n"
             f"**{contact['name']}** (ID: {contact['id']})\n"
             f"- Email: {email}\n"
             f"- Phone: {phone}\n"
-            f"- Mobile: {mobile}\n"
         )
 
         if "image_1920" in update_values:

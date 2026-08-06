@@ -10,6 +10,45 @@ logger = logging.getLogger("odoo-mcp")
 class ProjectsHandler(OdooBase):
     """Handler for project and task operations."""
 
+    # Odoo 19 removed project.task.kanban_state and replaced it with the `state`
+    # selection. Legacy kanban values are mapped onto whatever the live `state`
+    # selection actually offers — the candidate keys below are tried in order and
+    # the first one that exists on the server is used (verified via fields_get at
+    # runtime rather than trusting hardcoded values).
+    _KANBAN_STATE_PREFERENCES = {
+        "normal": ["01_in_progress", "in_progress"],
+        "blocked": ["02_changes_requested", "changes_requested", "blocked"],
+        "done": ["03_approved", "approved", "1_done", "done"],
+    }
+
+    def _task_state_selection(self):
+        """Live [(value, label), ...] selection for project.task.state (cached)."""
+        return self.field_selection("project.task", "state")
+
+    def _map_kanban_to_state(self, kanban_value):
+        """Translate a legacy kanban_state value to a live project.task.state key.
+
+        Returns (state_key_or_None, warning_or_None).
+        """
+        selection = self._task_state_selection()
+        keys = [k for k, _ in selection]
+        for candidate in self._KANBAN_STATE_PREFERENCES.get(kanban_value, []):
+            if candidate in keys:
+                return candidate, None
+        return None, (
+            f"kanban_state '{kanban_value}' could not be mapped to a project.task.state "
+            f"value (available: {', '.join(keys) or 'unknown'}); left unchanged"
+        )
+
+    def _state_label(self, state_value):
+        """Friendly label for a project.task.state value from the live selection."""
+        if not state_value:
+            return "No status"
+        for key, label in self._task_state_selection():
+            if key == state_value:
+                return label
+        return state_value
+
     async def list_projects(self, arguments: dict) -> list[TextContent]:
         """List all projects."""
         limit = arguments.get("limit", 20)
@@ -184,11 +223,12 @@ class ProjectsHandler(OdooBase):
         if not task_ids:
             return [TextContent(type="text", text=f"No tasks found in project {project_id}.")]
 
-        # Read task details
-        tasks = Task.read(
+        # Read task details. Odoo 19 replaced kanban_state with the `state` selection.
+        tasks, warnings = self.safe_read(
+            "project.task",
             task_ids,
             ["name", "id", "user_ids", "stage_id", "priority", "description", "date_deadline", "tag_ids",
-             "partner_id", "kanban_state", "date_assign", "child_ids", "subtask_count"]
+             "partner_id", "state", "date_assign", "child_ids", "subtask_count"]
         )
 
         # Get project name
@@ -228,10 +268,8 @@ class ProjectsHandler(OdooBase):
             partner_id = task.get("partner_id")
             customer = partner_id[1] if partner_id else "No customer"
 
-            # Get kanban state
-            kanban_state = task.get("kanban_state", "normal")
-            kanban_map = {"normal": "Ready", "blocked": "Blocked", "done": "Done"}
-            kanban_str = kanban_map.get(kanban_state, kanban_state)
+            # Get status (Odoo 19 replaced kanban_state with the state selection)
+            state_str = self._state_label(task.get("state"))
 
             # Get date assigned
             date_assign = task.get("date_assign", "Not assigned")
@@ -242,7 +280,7 @@ class ProjectsHandler(OdooBase):
             output_lines.append(
                 f"## {task['name']} (ID: {task['id']})\n"
                 f"- Stage: {stage}\n"
-                f"- Kanban State: {kanban_str}\n"
+                f"- Status: {state_str}\n"
                 f"- Priority: {priority_str}\n"
                 f"- Assigned to: {assignee_str}\n"
                 f"- Date Assigned: {date_assign}\n"
@@ -253,7 +291,7 @@ class ProjectsHandler(OdooBase):
                 f"- Description: {description}\n"
             )
 
-        return [TextContent(type="text", text="\n".join(output_lines))]
+        return [TextContent(type="text", text="\n".join(output_lines) + self.warnings_section(warnings))]
 
     async def search_tasks_by_tag(self, arguments: dict) -> list[TextContent]:
         """Search for tasks by tag name across all projects."""
@@ -281,11 +319,12 @@ class ProjectsHandler(OdooBase):
         if not task_ids:
             return [TextContent(type="text", text=f"No tasks found with tag '{actual_tag_name}'.")]
 
-        # Read task details
-        tasks = Task.read(
+        # Read task details. Odoo 19 replaced kanban_state with the `state` selection.
+        tasks, warnings = self.safe_read(
+            "project.task",
             task_ids,
             ["name", "id", "user_ids", "stage_id", "priority", "description", "date_deadline", "tag_ids", "project_id",
-             "partner_id", "kanban_state", "date_assign", "subtask_count"]
+             "partner_id", "state", "date_assign", "subtask_count"]
         )
 
         # Format output
@@ -331,10 +370,8 @@ class ProjectsHandler(OdooBase):
             partner_id = task.get("partner_id")
             customer = partner_id[1] if partner_id else "No customer"
 
-            # Get kanban state
-            kanban_state = task.get("kanban_state", "normal")
-            kanban_map = {"normal": "Ready", "blocked": "Blocked", "done": "Done"}
-            kanban_str = kanban_map.get(kanban_state, kanban_state)
+            # Get status (Odoo 19 replaced kanban_state with the state selection)
+            state_str = self._state_label(task.get("state"))
 
             # Get date assigned
             date_assign = task.get("date_assign", "Not assigned")
@@ -346,7 +383,7 @@ class ProjectsHandler(OdooBase):
                 f"## {task['name']} (ID: {task['id']})\n"
                 f"- Project: {project_name}\n"
                 f"- Stage: {stage}\n"
-                f"- Kanban State: {kanban_str}\n"
+                f"- Status: {state_str}\n"
                 f"- Priority: {priority_str}\n"
                 f"- Assigned to: {assignee_str}\n"
                 f"- Date Assigned: {date_assign}\n"
@@ -357,7 +394,7 @@ class ProjectsHandler(OdooBase):
                 f"- Description: {description}\n"
             )
 
-        return [TextContent(type="text", text="\n".join(output_lines))]
+        return [TextContent(type="text", text="\n".join(output_lines) + self.warnings_section(warnings))]
 
     def _find_user_ids(self, user_names: list[str]) -> list[int]:
         """Find user IDs by name or email."""
@@ -444,9 +481,23 @@ class ProjectsHandler(OdooBase):
         if "partner_id" in arguments and arguments["partner_id"]:
             task_values["partner_id"] = arguments["partner_id"]
 
-        # Handle kanban state
-        if "kanban_state" in arguments:
-            task_values["kanban_state"] = arguments["kanban_state"]
+        # Handle status. Odoo 19 removed kanban_state and replaced it with the
+        # `state` selection; map the legacy value onto a live state key.
+        remap_warnings = []
+        if "kanban_state" in arguments and arguments["kanban_state"]:
+            state_key, warn = self._map_kanban_to_state(arguments["kanban_state"])
+            if state_key:
+                task_values["state"] = state_key
+            if warn:
+                remap_warnings.append(warn)
+
+        # Validate payload against the live schema before writing.
+        invalid = self.invalid_write_fields("project.task", task_values)
+        if invalid:
+            return [TextContent(type="text", text=(
+                f"Error: unknown field(s) for project.task: {', '.join(invalid)}. "
+                "They may have been removed in this Odoo version."
+            ))]
 
         # Create the task
         Task = self.odoo.env["project.task"]
@@ -478,7 +529,7 @@ class ProjectsHandler(OdooBase):
             f"- Assigned to: {assignee_str}\n"
         )
 
-        return [TextContent(type="text", text=output)]
+        return [TextContent(type="text", text=output + self.warnings_section(remap_warnings))]
 
     async def update_task(self, arguments: dict) -> list[TextContent]:
         """Update an existing task."""
@@ -525,12 +576,26 @@ class ProjectsHandler(OdooBase):
         if "partner_id" in arguments:
             update_values["partner_id"] = arguments["partner_id"] if arguments["partner_id"] else False
 
-        # Handle kanban state
-        if "kanban_state" in arguments:
-            update_values["kanban_state"] = arguments["kanban_state"]
+        # Handle status. Odoo 19 removed kanban_state and replaced it with the
+        # `state` selection; map the legacy value onto a live state key.
+        remap_warnings = []
+        if "kanban_state" in arguments and arguments["kanban_state"]:
+            state_key, warn = self._map_kanban_to_state(arguments["kanban_state"])
+            if state_key:
+                update_values["state"] = state_key
+            if warn:
+                remap_warnings.append(warn)
 
         if not update_values:
             return [TextContent(type="text", text="Error: No fields to update provided")]
+
+        # Validate payload against the live schema before writing.
+        invalid = self.invalid_write_fields("project.task", update_values)
+        if invalid:
+            return [TextContent(type="text", text=(
+                f"Error: unknown field(s) for project.task: {', '.join(invalid)}. "
+                "They may have been removed in this Odoo version."
+            ))]
 
         # Update the task
         Task = self.odoo.env["project.task"]
@@ -570,7 +635,7 @@ class ProjectsHandler(OdooBase):
             f"- Deadline: {deadline}\n"
         )
 
-        return [TextContent(type="text", text=output)]
+        return [TextContent(type="text", text=output + self.warnings_section(remap_warnings))]
 
     async def delete_task(self, arguments: dict) -> list[TextContent]:
         """Delete a task permanently."""

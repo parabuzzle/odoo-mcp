@@ -43,7 +43,8 @@ class TodosHandler(OdooBase):
             return [TextContent(type="text", text="No to-dos found.")]
 
         # Read task details
-        tasks = Task.read(
+        tasks = self.safe_read_records(
+            "project.task",
             task_ids,
             ["name", "id", "user_ids", "personal_stage_type_id", "priority", "description", "date_deadline", "tag_ids", "state"]
         )
@@ -106,7 +107,8 @@ class TodosHandler(OdooBase):
         Task = self.odoo.env["project.task"]
 
         try:
-            task = Task.read(
+            task = self.safe_read_records(
+                "project.task",
                 todo_id,
                 [
                     "id",
@@ -241,7 +243,7 @@ class TodosHandler(OdooBase):
             return [TextContent(type="text", text=f"Error creating to-do: {str(e)}")]
 
         # Read back the created to-do
-        task = Task.read(task_id, ["id", "name", "personal_stage_type_id", "date_deadline"])[0]
+        task = self.safe_read_records("project.task", task_id, ["id", "name", "personal_stage_type_id", "date_deadline"])[0]
 
         stage = task.get("personal_stage_type_id")
         stage_name = stage[1] if stage else "Unknown"
@@ -301,7 +303,7 @@ class TodosHandler(OdooBase):
             return [TextContent(type="text", text=f"Error updating to-do: {str(e)}")]
 
         # Read back the updated to-do
-        task = Task.read(todo_id, ["id", "name", "personal_stage_type_id", "date_deadline"])[0]
+        task = self.safe_read_records("project.task", todo_id, ["id", "name", "personal_stage_type_id", "date_deadline"])[0]
 
         stage = task.get("personal_stage_type_id")
         stage_name = stage[1] if stage else "Unknown"
@@ -336,7 +338,7 @@ class TodosHandler(OdooBase):
             return [TextContent(type="text", text="Error: Could not find a 'Done' stage.")]
 
         # Read stages and find one with sequence 5-7
-        done_stages = Stage.read(done_stage_ids, ["id", "sequence", "fold"])
+        done_stages = self.safe_read_records("project.task.type", done_stage_ids, ["id", "sequence", "fold"])
         preferred_stage = None
         for stage in done_stages:
             if stage.get("fold") and 5 <= stage.get("sequence", 0) <= 7:
@@ -363,7 +365,7 @@ class TodosHandler(OdooBase):
             return [TextContent(type="text", text=f"Error marking to-do as done: {str(e)}")]
 
         # Read back the task
-        task = Task.read(todo_id, ["id", "name", "personal_stage_type_id", "state", "is_closed"])[0]
+        task = self.safe_read_records("project.task", todo_id, ["id", "name", "personal_stage_type_id", "state", "is_closed"])[0]
 
         stage = task.get("personal_stage_type_id")
         stage_name = stage[1] if stage else "Unknown"
@@ -417,7 +419,7 @@ class TodosHandler(OdooBase):
         if not stage_ids:
             return [TextContent(type="text", text="No stages found.")]
 
-        stages = Stage.read(stage_ids, ["id", "name", "sequence", "fold"])
+        stages = self.safe_read_records("project.task.type", stage_ids, ["id", "name", "sequence", "fold"])
 
         output_lines = ["# To-Do Stages\n"]
         for stage in sorted(stages, key=lambda x: x.get("sequence", 0)):

@@ -43,7 +43,8 @@ class ActivitiesHandler(OdooBase):
             return [TextContent(type="text", text="No activities found.")]
 
         # Read activity details
-        activities = Activity.read(
+        activities = self.safe_read_records(
+            "mail.activity",
             activity_ids,
             [
                 "id",
@@ -101,7 +102,8 @@ class ActivitiesHandler(OdooBase):
         Activity = self.odoo.env["mail.activity"]
 
         try:
-            activity = Activity.read(
+            activity = self.safe_read_records(
+                "mail.activity",
                 activity_id,
                 [
                     "id",
@@ -218,7 +220,7 @@ class ActivitiesHandler(OdooBase):
             return [TextContent(type="text", text=f"Error creating activity: {str(e)}")]
 
         # Read back the created activity
-        activity = Activity.read(activity_id, ["id", "summary", "user_id", "date_deadline"])[0]
+        activity = self.safe_read_records("mail.activity", activity_id, ["id", "summary", "user_id", "date_deadline"])[0]
 
         user = activity.get("user_id")
         user_name = user[1] if user else "Unknown"
@@ -278,7 +280,7 @@ class ActivitiesHandler(OdooBase):
             return [TextContent(type="text", text=f"Error updating activity: {str(e)}")]
 
         # Read back the updated activity
-        activity = Activity.read(activity_id, ["id", "summary", "user_id", "date_deadline"])[0]
+        activity = self.safe_read_records("mail.activity", activity_id, ["id", "summary", "user_id", "date_deadline"])[0]
 
         user = activity.get("user_id")
         user_name = user[1] if user else "Unknown"
@@ -354,7 +356,7 @@ class ActivitiesHandler(OdooBase):
         if not type_ids:
             return [TextContent(type="text", text="No activity types found.")]
 
-        types = ActivityType.read(type_ids, ["id", "name", "summary", "delay_count", "delay_unit"])
+        types = self.safe_read_records("mail.activity.type", type_ids, ["id", "name", "summary", "delay_count", "delay_unit"])
 
         output_lines = ["# Activity Types\n"]
         for activity_type in types:

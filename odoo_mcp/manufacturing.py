@@ -106,7 +106,7 @@ class ManufacturingHandler(OdooBase):
         Bom = self.odoo.env["mrp.bom"]
         bom_ids = Bom.search([("product_tmpl_id", "in", tmpl_ids)])
         if bom_ids:
-            for bom in Bom.read(bom_ids, ["product_tmpl_id", "product_id"]):
+            for bom in self.safe_read_records("mrp.bom", bom_ids, ["product_tmpl_id", "product_id"]):
                 if bom.get("product_id"):
                     variant_level.add(bom["product_id"][0])
                 else:
@@ -202,7 +202,7 @@ class ManufacturingHandler(OdooBase):
                 "# BoMs (0)\n\nNo products matched.\n\n" + _json_block([])
             ))]
 
-        products = Product.read(product_ids, ["id", "default_code", "product_tmpl_id"])
+        products = self.safe_read_records("product.product", product_ids, ["id", "default_code", "product_tmpl_id"])
         requested = {p["id"] for p in products}
         tmpl_ids = list({p["product_tmpl_id"][0] for p in products})
         tmpl_code = {}
@@ -220,8 +220,8 @@ class ManufacturingHandler(OdooBase):
                 f"installed on this Odoo instance. Details: {e}"
             ))]
 
-        boms = Bom.read(
-            bom_ids, ["id", "product_tmpl_id", "product_id", "product_qty", "type", "bom_line_ids"]
+        boms = self.safe_read_records(
+            "mrp.bom", bom_ids, ["id", "product_tmpl_id", "product_id", "product_qty", "type", "bom_line_ids"]
         ) if bom_ids else []
         # A variant-bound BoM only applies to that variant; keep it only when
         # the bound variant was requested. Template-level BoMs cover all
@@ -236,7 +236,7 @@ class ManufacturingHandler(OdooBase):
         variant_ids = list({b["product_id"][0] for b in boms if b.get("product_id")})
         variant_code = {}
         if variant_ids:
-            for v in Product.read(variant_ids, ["id", "default_code"]):
+            for v in self.safe_read_records("product.product", variant_ids, ["id", "default_code"]):
                 variant_code[v["id"]] = _clean(v.get("default_code"))
 
         # Batch-read all lines, then all components (read by id sees archived
@@ -246,7 +246,7 @@ class ManufacturingHandler(OdooBase):
         lines_by_bom = {}
         component_ids = set()
         if line_ids:
-            for line in BomLine.read(line_ids, ["id", "bom_id", "product_id", "product_qty", "product_uom_id"]):
+            for line in self.safe_read_records("mrp.bom.line", line_ids, ["id", "bom_id", "product_id", "product_qty", "product_uom_id"]):
                 lines_by_bom.setdefault(_m2o_id(line["bom_id"]), []).append(line)
                 component_ids.add(_m2o_id(line["product_id"]))
         components = {c["id"]: c for c in self._read_products(list(component_ids))}
@@ -350,7 +350,7 @@ class ManufacturingHandler(OdooBase):
             loc_ids = list({_m2o_id(g["location_id"]) for g in groups if g.get("location_id")})
             if loc_ids:
                 Location = self.odoo.env["stock.location"]
-                for loc in Location.read(loc_ids, ["id", "complete_name"]):
+                for loc in self.safe_read_records("stock.location", loc_ids, ["id", "complete_name"]):
                     loc_name[loc["id"]] = loc.get("complete_name")
 
         rows = []
@@ -407,7 +407,7 @@ class ManufacturingHandler(OdooBase):
 
         rows = []
         if location_ids:
-            for loc in Location.read(location_ids, ["id", "complete_name", "usage", "active"]):
+            for loc in self.safe_read_records("stock.location", location_ids, ["id", "complete_name", "usage", "active"]):
                 rows.append({
                     "id": loc["id"],
                     "complete_name": loc.get("complete_name"),
