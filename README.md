@@ -8,6 +8,19 @@ Odoo provides lots of functionality through its various apps. The goal of this r
 
 _note: This MCP supports the Odoo SaaS product._
 
+## Remote HTTP service (Docker)
+
+For ChatGPT and other remote MCP clients, build the Docker image and expose
+`/mcp` through your HTTPS reverse proxy. The optional HTTP service supports
+configurable OIDC sign-in, dynamic OAuth registration (CIMD and DCR), explicit
+user allowlists, encrypted OAuth persistence, and mounted secret files.
+It serves one configured Odoo connection and exposes read tools by default;
+operators explicitly enable individual write tools.
+
+See [HTTP service deployment and configuration](docs/http-service.md). Ansible
+automation, production configuration, and secrets belong in your separate
+deployment repository. The stdio setup below remains supported.
+
 ## Setup
 
 You need some environment variables set in a `.env` file:

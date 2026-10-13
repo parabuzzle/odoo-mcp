@@ -23,9 +23,6 @@ from .dashboards import DashboardsHandler
 from .manufacturing import ManufacturingHandler
 from .accounting import AccountingHandler
 
-# Load environment variables
-load_dotenv()
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("odoo-mcp")
@@ -51,6 +48,10 @@ class OdooMCPServer:
         self.dashboards = DashboardsHandler()
         self.manufacturing = ManufacturingHandler()
         self.accounting = AccountingHandler()
+        # Share schema knowledge only inside this connection, never process-wide.
+        for handler in vars(self).values():
+            if hasattr(handler, "_fields_cache"):
+                handler._fields_cache = self.projects._fields_cache
         # Let the inventory dashboard builder also create Documents spreadsheets.
         self.dashboards.spreadsheets = self.spreadsheets
 
@@ -2086,9 +2087,15 @@ class OdooMCPServer:
 
 async def main():
     """Main entry point."""
+    load_dotenv()
     server = OdooMCPServer()
     await server.run()
 
 
-if __name__ == "__main__":
+def cli():
+    """Synchronous console-script entry point for the stdio server."""
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    cli()

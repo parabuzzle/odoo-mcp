@@ -80,6 +80,22 @@ odoo-mcp/
 
 ## Architecture
 
+### Optional HTTP service
+
+- `odoo_mcp/http.py`: FastMCP Streamable HTTP adapter at `/mcp`; registers the
+  existing catalogue and serializes synchronous Odoo work off the event loop.
+- `odoo_mcp/auth.py`: configurable OIDC OAuth proxy with CIMD/DCR, PKCE, consent,
+  signed-identity allowlists, encrypted persistent grants, and local revocation.
+- `odoo_mcp/config.py`: environment or mounted `NAME_FILE` settings. HTTP never
+  loads `.env`; only the stdio entry point does so.
+- One Odoo connection per deployment; approved people share its permissions.
+  Read-only HTTP tools are explicitly listed; writes need `MCP_WRITE_TOOLS`.
+- `Dockerfile`, `.dockerignore`, and `.github/workflows/container.yml` package,
+  test, and build the image. Ansible belongs in a separate deployment repo.
+- `docs/http-service.md` documents the deployment contract and identity-provider
+  setup. Run `python -m pytest tests -q` for offline HTTP/OAuth integration tests.
+  These tests must never use the production `.env` or live Odoo account.
+
 The codebase follows a modular architecture with separate handler modules for each Odoo app:
 
 ### Base Class (`odoo_mcp/base.py`)
@@ -94,8 +110,8 @@ model fields between major versions, and hardcoded field lists in `read()`/
 `write()` calls 500 the moment a referenced field disappears. `OdooBase` provides
 a caching `fields_get()`-based layer so this degrades gracefully:
 - `get_model_fields(model)` - cached `fields_get()` per model. The cache is a
-  **class attribute** shared across every handler instance (they share one
-  connection), so it costs one `fields_get` RPC per model for the whole process,
+  **instance attribute** shared by handlers within one `OdooMCPServer` connection,
+  so it costs one `fields_get` RPC per model for that connection,
   not one per call. On RPC failure it caches `{}` and the helpers **fail open**
   (drop nothing) so hardening never makes things worse than before.
 - `safe_read(model, ids, fields)` -> `(records, warnings)`: `read()` with the

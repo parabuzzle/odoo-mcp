@@ -1,0 +1,12 @@
+# Allowlist: secrets, Git history, local environments, and tests never enter
+# the build context, including when someone adds a new local credential file.
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!README.md
+!LICENSE
+!odoo_mcp/
+!odoo_mcp/**
+odoo_mcp/**/__pycache__/
+odoo_mcp/**/*.pyc
