@@ -86,15 +86,29 @@ odoo-mcp/
   existing catalogue and serializes synchronous Odoo work off the event loop.
 - `odoo_mcp/auth.py`: configurable OIDC OAuth proxy with CIMD/DCR, PKCE, consent,
   signed-identity allowlists, encrypted persistent grants, and local revocation.
+  Grant transitions share one process-local lock; consumed refresh tokens revoke
+  their family on replay. OIDC exp/iat/azp claims are checked in addition to the
+  library's signature/issuer/audience checks. Upstream diagnostics are sanitized
+  before the OAuth library can log or expose them. Google mode requests offline
+  access and enforces the signed Workspace `hd` claim.
+- `odoo_mcp/remote.py`: HTTP-only RPC result/query bounds; overlarge complete sets
+  fail rather than silently truncating totals. Stdio keeps its original behavior.
+  HTTP also limits admission to eight queued/running tools and responses to 1 MiB.
 - `odoo_mcp/config.py`: environment or mounted `NAME_FILE` settings. HTTP never
   loads `.env`; only the stdio entry point does so.
 - One Odoo connection per deployment; approved people share its permissions.
   Read-only HTTP tools are explicitly listed; writes need `MCP_WRITE_TOOLS`.
 - `Dockerfile`, `.dockerignore`, and `.github/workflows/container.yml` package,
   test, and build the image. Ansible belongs in a separate deployment repo.
+  Hash-locked requirements cover runtime, test and build dependencies. CI scans
+  history and the image, then publishes the tested artifact without rebuilding.
+  Runtime pip is removed; package/license inventories ship under /usr/share/odoo-mcp.
 - `docs/http-service.md` documents the deployment contract and identity-provider
   setup. Run `python -m pytest tests -q` for offline HTTP/OAuth integration tests.
   These tests must never use the production `.env` or live Odoo account.
+  `tests/test_security.py` covers audit regressions. The private Ansible session
+  can use `docs/deployment-handoff.txt`; live Google/Odoo/ChatGPT checks are still
+  required after deployment and must not be claimed from the offline tests.
 
 The codebase follows a modular architecture with separate handler modules for each Odoo app:
 

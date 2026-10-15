@@ -2,6 +2,11 @@
 
 import base64
 import hashlib
+import math
+import time
+from contextlib import asynccontextmanager
+
+import anyio
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -27,11 +32,30 @@ def identity_allowed(claims: dict, config: HTTPSettings) -> bool:
     subject = claims.get("sub")
     if not isinstance(subject, str) or not subject:
         return False
+    if config.oidc_provider == "google" and claims.get("hd") != config.workspace_domain:
+        return False
     if subject in config.allowed_subjects:
         return True
     email = claims.get("email")
     return (claims.get("email_verified") is True and isinstance(email, str)
             and email.casefold() in config.allowed_emails)
+
+
+def valid_identity_claims(claims, config):
+    """Additional OIDC requirements on already signature-verified claims."""
+    now = time.time()
+    for name in ("exp", "iat"):
+        value = claims.get(name)
+        if type(value) not in (int, float) or not math.isfinite(value):
+            return False
+    if claims["exp"] <= now or claims["iat"] > now + 60 or claims["exp"] <= claims["iat"]:
+        return False
+    audience = claims.get("aud")
+    if isinstance(audience, list) and len(audience) > 1 and "azp" not in claims:
+        return False
+    if "azp" in claims and claims["azp"] != config.oidc_client_id:
+        return False
+    return identity_allowed(claims, config)
 
 
 class OdooOAuthProvider(OIDCProxy):
@@ -43,6 +67,9 @@ class OdooOAuthProvider(OIDCProxy):
 
     def __init__(self, config: HTTPSettings):
         self.config = config
+        # One process is an explicit deployment requirement. Serialize all grant
+        # transitions, including implicit refresh during access-token loading.
+        self._grant_lock = anyio.Lock()
         config.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         encryption_key = base64.urlsafe_b64encode(HKDF(
             algorithm=hashes.SHA256(), length=32,
@@ -65,7 +92,9 @@ class OdooOAuthProvider(OIDCProxy):
             client_storage=storage,
             verify_id_token=True,
             required_scopes=list(config.scopes),
-            extra_authorize_params={"scope": " ".join(config.scopes)},
+            extra_authorize_params={"scope": " ".join(config.scopes), **({
+                "access_type": "offline", "prompt": "consent", "hd": config.workspace_domain,
+            } if config.oidc_provider == "google" else {})},
             token_endpoint_auth_method=config.token_endpoint_auth_method,
             require_authorization_consent=True,
             enable_cimd=True,
@@ -80,18 +109,39 @@ class OdooOAuthProvider(OIDCProxy):
         # Authorization to Odoo is governed by the verified identity allowlist.
         self.required_scopes = ["openid"]
 
+    @asynccontextmanager
+    async def _upstream_oauth_client(self):
+        # Replace diagnostics BEFORE the library logs or returns them. This
+        # covers callback exchange, explicit refresh and transparent refresh.
+        try:
+            async with super()._upstream_oauth_client() as client:
+                yield client
+        except Exception:
+            raise TokenError("invalid_grant", "Identity provider request failed; reconnect") from None
+
+    async def exchange_authorization_code(self, client, authorization_code):
+        async with self._grant_lock:
+            try:
+                return await super().exchange_authorization_code(client, authorization_code)
+            except Exception:
+                raise TokenError("invalid_grant", "Authorization failed; reconnect") from None
+
     async def _extract_upstream_claims(self, idp_tokens):
         # The library validates signature, issuer, expiry, and audience against
         # this deployment's OIDC client. Never authorize from unverified JWTs.
         token = idp_tokens.get("id_token")
         identity = await self._token_validator.verify_token(token) if token else None
-        if identity is None or not identity_allowed(identity.claims, self.config):
+        if identity is None or not valid_identity_claims(identity.claims, self.config):
             raise TokenError("invalid_grant", "This account is not authorized for this Odoo connection")
         return None  # Do not copy identity information into client-visible JWTs.
 
     async def load_access_token(self, token):
+        async with self._grant_lock:
+            return await self._load_access_token(token)
+
+    async def _load_access_token(self, token):
         identity = await super().load_access_token(token)
-        if identity is None or not identity_allowed(identity.claims, self.config):
+        if identity is None or not valid_identity_claims(identity.claims, self.config):
             return None
         try:
             payload = self.jwt_issuer.verify_token(token)
@@ -111,6 +161,15 @@ class OdooOAuthProvider(OIDCProxy):
         })
 
     async def revoke_token(self, token):
+        async with self._grant_lock:
+            await self._revoke_token(token)
+
+    async def _revoke_grant(self, grant_id):
+        await self._client_storage.put(key=grant_id, value={"revoked": True},
+                                       collection="odoo_revoked_grants")
+        await self._upstream_token_store.delete(key=grant_id)
+
+    async def _revoke_token(self, token):
         """Immediately invalidate the whole local grant, including sibling tokens."""
         kind = "refresh" if isinstance(token, RefreshToken) else "access"
         payload = self.jwt_issuer.verify_token(token.token, expected_token_use=kind)
@@ -118,23 +177,55 @@ class OdooOAuthProvider(OIDCProxy):
         if mapping is not None:
             # Durable tombstone also defeats a refresh already in flight when
             # revocation happens. Do not let that request resurrect the grant.
-            await self._client_storage.put(
-                key=mapping.upstream_token_id, value={"revoked": True},
-                collection="odoo_revoked_grants",
-            )
-            await self._upstream_token_store.delete(key=mapping.upstream_token_id)
+            await self._revoke_grant(mapping.upstream_token_id)
         await self._jti_mapping_store.delete(key=payload["jti"])
         if isinstance(token, RefreshToken):
             await self._refresh_token_store.delete(key=hashlib.sha256(token.token.encode()).hexdigest())
 
     async def exchange_refresh_token(self, client, refresh_token, scopes):
+        async with self._grant_lock:
+            try:
+                return await self._exchange_refresh_token(client, refresh_token, scopes)
+            except Exception:
+                raise TokenError("invalid_grant", "Refresh failed; reconnect") from None
+
+    async def _used_refresh(self, client, token):
+        used = await self._client_storage.get(key=hashlib.sha256(token.encode()).hexdigest(),
+                                             collection="odoo_used_refresh")
+        if used and used["client_id"] == client.client_id:
+            await self._revoke_grant(used["grant_id"])
+            return True
+        return False
+
+    async def load_refresh_token(self, client, token):
+        async with self._grant_lock:
+            if await self._used_refresh(client, token):
+                return None
+            return await super().load_refresh_token(client, token)
+
+    async def _exchange_refresh_token(self, client, refresh_token, scopes):
+        if await self._used_refresh(client, refresh_token.token):
+            raise TokenError("invalid_grant", "Refresh token replay")
         payload = self.jwt_issuer.verify_token(refresh_token.token, expected_token_use="refresh")
+        if payload["client_id"] != client.client_id:
+            raise TokenError("invalid_grant", "Incorrect client")
         mapping = await self._jti_mapping_store.get(key=payload["jti"])
         if mapping is None or await self._client_storage.get(
             key=mapping.upstream_token_id, collection="odoo_revoked_grants"
         ):
             raise TokenError("invalid_grant", "Authorization has been revoked")
-        return await super().exchange_refresh_token(client, refresh_token, scopes)
+        # Reserve before contacting the provider. Failed/ambiguous exchanges
+        # require reconnection rather than retrying a potentially consumed token.
+        await self._client_storage.put(
+            key=hashlib.sha256(refresh_token.token.encode()).hexdigest(),
+            value={"grant_id": mapping.upstream_token_id, "client_id": client.client_id},
+            collection="odoo_used_refresh", ttl=max(1, int(payload["exp"] - time.time()) + 900),
+        )
+        try:
+            return await super().exchange_refresh_token(client, refresh_token, scopes)
+        except Exception:
+            await self._revoke_grant(mapping.upstream_token_id)
+            raise
 
     def get_routes(self, mcp_path=None):
         routes = super().get_routes(mcp_path)

@@ -21,6 +21,12 @@ See [HTTP service deployment and configuration](docs/http-service.md). Ansible
 automation, production configuration, and secrets belong in your separate
 deployment repository. The stdio setup below remains supported.
 
+Google Workspace OIDC is supported with signed-domain checks and exact user
+allowlists. The [deployment handoff](docs/deployment-handoff.txt) covers Google,
+Docker, HTTPS and ChatGPT setup for a separate private Ansible repository.
+See [security guidance](SECURITY.md) and [third-party notices](THIRD_PARTY_NOTICES.txt)
+before distributing or operating an image.
+
 ## Setup
 
 You need some environment variables set in a `.env` file:

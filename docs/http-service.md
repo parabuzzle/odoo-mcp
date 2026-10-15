@@ -16,6 +16,16 @@ The HTTP extra uses the pinned FastMCP OIDC proxy for discovery, authorization
 code + S256 PKCE, consent, CIMD, dynamic client registration, and token storage.
 No local password database or unauthenticated HTTP mode is provided.
 
+For Google Workspace set `MCP_OIDC_PROVIDER=google`,
+`MCP_OIDC_CONFIG_URL=https://accounts.google.com/.well-known/openid-configuration`,
+and `MCP_GOOGLE_WORKSPACE_DOMAIN` to the exact Workspace domain. Register a Google
+OAuth web client with an **Internal** audience. Google mode requests
+`access_type=offline` and `prompt=consent`, and verifies the signed `hd` claim
+against that domain in addition to the explicit user allowlist. The `hd` request
+parameter is only a sign-in hint; the signed claim is the enforcement boundary.
+Keep scopes as `openid profile email`; Google's offline flow does not use an
+`offline_access` scope. See [Google's server-side OAuth documentation](https://developers.google.com/identity/protocols/oauth2/web-server#offline).
+
 Before deploying, register one confidential web application with your chosen
 OIDC provider. Configure this exact callback:
 
@@ -50,6 +60,8 @@ The HTTP service deliberately does not load a repository `.env` file.
 | `MCP_PUBLIC_URL` | Required public HTTPS origin, without `/mcp` |
 | `MCP_OIDC_CONFIG_URL` | Required HTTPS OIDC discovery URL |
 | `MCP_OIDC_CLIENT_ID` | Application registered once at the identity provider |
+| `MCP_OIDC_PROVIDER` | `generic` (default) or `google` |
+| `MCP_GOOGLE_WORKSPACE_DOMAIN` | Required exact domain for Google; matched against signed `hd` |
 | `MCP_OIDC_CLIENT_SECRET_FILE` | Mounted OIDC application secret |
 | `MCP_OAUTH_SIGNING_KEY_FILE` | Mounted high-entropy secret, at least 32 bytes; generate with `secrets.token_urlsafe(48)` |
 | `MCP_ALLOWED_SUBJECTS` | Comma-separated exact OIDC subject IDs (preferred) |
@@ -72,6 +84,14 @@ they are not a substitute for the backend allowlist or Odoo permissions.
 Contact `image_url` fetching is disabled in HTTP mode to avoid exposing an
 arbitrary server-side fetch facility. Existing stdio behavior is retained.
 
+HTTP list limits must be between 1 and 500. Remote RPC searches and group queries
+also have a 500-record/group bound, including internal searches without an
+explicit limit. An operation needing a larger complete set fails rather than
+silently truncating accounting totals. Narrow its filters. Tool responses are
+capped at 1 MiB. Eight tool requests may be admitted at once; their Odoo execution
+is serialized. Excess requests fail with a busy response. Use container memory
+and CPU limits as well; bounded results do not eliminate database query costs.
+
 ## Image and runtime
 
 Build locally:
@@ -83,6 +103,10 @@ docker build -t odoo-mcp:local .
 The CI workflow tests and builds PRs. Pushing a `v*` release tag publishes a
 versioned image to `ghcr.io/<owner>/<repository>`; ordinary branch builds do not
 publish. Registry package visibility must be configured by the repository owner.
+CI publishes the exact image that passed the smoke test and vulnerability gate,
+without rebuilding it. Python dependencies and build tooling use hash-locked
+requirements. The runtime excludes pip and build tooling and includes package
+and license inventories under `/usr/share/odoo-mcp`.
 Your deployment repository should pin an image digest. No Ansible or production
 deployment inventory lives in this repository.
 
@@ -142,6 +166,13 @@ state as potentially restoring revoked grants, and rotate the signing key when
 restoring backups. Rotate the Odoo key independently by replacing its secret
 file and restarting the container.
 
+Refresh tokens are single-use. Reusing a consumed token revokes its whole local
+grant, including newly issued sibling tokens, and requires reconnection. Grant
+operations (including transparent refresh, code exchange, and revocation) are
+serialized in this single-process deployment. In-flight tool calls already
+authorized before revocation may finish. Upstream errors are replaced with
+generic messages before the OAuth library can expose their diagnostics.
+
 `GET /healthz` is unauthenticated **liveness only**. It does not log into Odoo or
 prove the OIDC/Odoo services are reachable. Invalid configuration prevents
 startup. Deployment acceptance should include a real ChatGPT authorization and
@@ -162,3 +193,19 @@ python test_schema_layer.py
 
 The original `odoo-mcp` / `python -m odoo_mcp.server` commands continue to use
 stdio and load local `.env` settings. `odoo-mcp-http` starts the HTTP service.
+
+For release validation on Python 3.12, install `requirements-build.lock` and
+`requirements-test.lock` with `pip install --require-hashes -r ...`, then install
+the project with `pip install --no-deps --no-build-isolation .`.
+Regenerate locks deliberately with uv 0.13.1:
+
+```sh
+uv pip compile pyproject.toml --extra http --python-version 3.12 --universal --generate-hashes -o requirements-http.lock
+uv pip compile pyproject.toml --extra http --extra test --python-version 3.12 --universal --generate-hashes -c requirements-http.lock -o requirements-test.lock
+uv pip compile requirements-build.in --python-version 3.12 --universal --generate-hashes -o requirements-build.lock
+```
+
+Run the security suite and rebuild/scan after dependency updates. Dependabot
+updates still need lock regeneration and review. See
+[`deployment-handoff.txt`](deployment-handoff.txt) for the private Ansible repo's
+deployment instructions; no Ansible inventory or secrets belong here.

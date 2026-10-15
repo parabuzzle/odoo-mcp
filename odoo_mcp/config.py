@@ -52,6 +52,8 @@ class HTTPSettings:
     state_dir: Path
     scopes: tuple[str, ...] = ("openid", "profile", "email")
     token_endpoint_auth_method: str = "client_secret_basic"
+    oidc_provider: str = "generic"
+    workspace_domain: str = ""
 
     @classmethod
     def from_env(cls):
@@ -70,6 +72,18 @@ class HTTPSettings:
         method = setting("MCP_OIDC_TOKEN_AUTH_METHOD", "client_secret_basic")
         if method not in ("client_secret_basic", "client_secret_post"):
             raise ValueError("MCP_OIDC_TOKEN_AUTH_METHOD must be client_secret_basic or client_secret_post")
+        provider = setting("MCP_OIDC_PROVIDER", "generic")
+        if provider not in ("generic", "google"):
+            raise ValueError("MCP_OIDC_PROVIDER must be generic or google")
+        domain = setting("MCP_GOOGLE_WORKSPACE_DOMAIN").lower()
+        if provider == "google" and (not domain or any(c in domain for c in "*/:@ ")):
+            raise ValueError("Google requires an exact MCP_GOOGLE_WORKSPACE_DOMAIN")
+        discovery = required("MCP_OIDC_CONFIG_URL")
+        if provider == "google":
+            if discovery != "https://accounts.google.com/.well-known/openid-configuration":
+                raise ValueError("Google requires its official OIDC discovery URL")
+            if set(scopes) - {"openid", "email", "profile"}:
+                raise ValueError("Google login only permits openid email profile scopes")
         # One operator-configured connection. Never accept credentials or an Odoo
         # destination from tool arguments, OAuth registrations, or browser users.
         https_url("ODOO_URL", required("ODOO_URL"), origin_only=True)
@@ -77,7 +91,7 @@ class HTTPSettings:
             required(name)
         return cls(
             public_url=https_url("MCP_PUBLIC_URL", required("MCP_PUBLIC_URL"), origin_only=True),
-            oidc_config_url=https_url("MCP_OIDC_CONFIG_URL", required("MCP_OIDC_CONFIG_URL")),
+            oidc_config_url=https_url("MCP_OIDC_CONFIG_URL", discovery),
             oidc_client_id=required("MCP_OIDC_CLIENT_ID"),
             oidc_client_secret=required("MCP_OIDC_CLIENT_SECRET"),
             signing_key=key,
@@ -87,4 +101,6 @@ class HTTPSettings:
             state_dir=Path(setting("MCP_STATE_DIR", "/data/oauth")),
             scopes=scopes,
             token_endpoint_auth_method=method,
+            oidc_provider=provider,
+            workspace_domain=domain,
         )

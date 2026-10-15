@@ -38,7 +38,11 @@ class OdooBase:
         logger.info("Connecting to Odoo")
 
         # Create Odoo connection
-        connection = odoorpc.ODOO(parsed.hostname, protocol="jsonrpc+ssl", port=parsed.port or 443, timeout=30)
+        connection_type = odoorpc.ODOO
+        if getattr(self, "remote_limits", False):
+            from .remote import RemoteOdoo
+            connection_type = RemoteOdoo
+        connection = connection_type(parsed.hostname, protocol="jsonrpc+ssl", port=parsed.port or 443, timeout=30)
 
         # Login with API key
         connection.login(odoo_db, odoo_username, odoo_api_key)

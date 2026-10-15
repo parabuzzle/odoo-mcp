@@ -6,6 +6,11 @@
 !pyproject.toml
 !README.md
 !LICENSE
+!THIRD_PARTY_NOTICES.txt
+!requirements-build.lock
+!requirements-http.lock
+!scripts/
+!scripts/image_inventory.py
 !odoo_mcp/
 !odoo_mcp/**
 odoo_mcp/**/__pycache__/

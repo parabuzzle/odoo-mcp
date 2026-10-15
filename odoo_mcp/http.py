@@ -6,6 +6,7 @@ import logging
 import re
 import time
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from urllib.parse import urlsplit
 
 import anyio
@@ -23,6 +24,7 @@ from starlette.responses import JSONResponse
 from .auth import OdooOAuthProvider
 from .config import HTTPSettings, required
 from .server import OdooMCPServer
+from .remote import MAX_RECORDS
 
 logger = logging.getLogger("odoo-mcp.audit")
 
@@ -60,6 +62,22 @@ class SecretRedactor(logging.Filter):
         record.exc_text = None
         record.stack_info = None
         return True
+
+
+def install_redactor(redactor):
+    """Sanitize before any current or future handler sees the log record."""
+    factory = logging.getLogRecordFactory()
+    if hasattr(factory, "odoo_redactor"):
+        factory.odoo_redactor = redactor
+        return
+
+    def safe_record(*args, **kwargs):
+        record = factory(*args, **kwargs)
+        safe_record.odoo_redactor.filter(record)
+        return record
+
+    safe_record.odoo_redactor = redactor
+    logging.setLogRecordFactory(safe_record)
 
 
 class RequestBoundary:
@@ -112,6 +130,7 @@ class OdooHTTPTool(Tool):
     _backend: OdooMCPServer = PrivateAttr()
     _limiter: anyio.CapacityLimiter = PrivateAttr()
     _redactor: SecretRedactor = PrivateAttr()
+    _admission: anyio.Semaphore = PrivateAttr()
 
     async def run(self, arguments):
         identity = get_access_token()
@@ -120,10 +139,18 @@ class OdooHTTPTool(Tool):
         validator = Draft202012Validator(self.parameters)
         if not validator.is_valid(arguments):
             return ToolResult(content="Invalid tool arguments; consult the tool schema", is_error=True)
+        for name, value in arguments.items():
+            if name == "limit" or name.endswith("_limit"):
+                if type(value) is not int or not 1 <= value <= MAX_RECORDS:
+                    return ToolResult(content=f"{name} must be between 1 and {MAX_RECORDS}", is_error=True)
         # The local contacts helpers can fetch arbitrary image URLs. That is not
         # an appropriate server-side network capability for the remote service.
         if self.name in ("create_contact", "update_contact") and arguments.get("image_url"):
             return ToolResult(content="Remote image URL fetching is disabled over HTTP", is_error=True)
+        try:
+            self._admission.acquire_nowait()
+        except anyio.WouldBlock:
+            return ToolResult(content="Service is busy; retry later", is_error=True)
         started = time.monotonic()
         subject = hashlib.sha256(str(identity.claims.get("sub", "")).encode()).hexdigest()[:16]
 
@@ -135,6 +162,8 @@ class OdooHTTPTool(Tool):
 
         try:
             content = await anyio.to_thread.run_sync(execute, limiter=self._limiter)
+            if sum(len(x.text.encode("utf-8")) for x in content) > 1024 * 1024:
+                content = [TextContent(type="text", text="Error: response too large; narrow the filters")]
             failed = any(re.match(r"^\s*(?:\*\*)?Error\b", x.text) for x in content)
             if failed:
                 content = [TextContent(type="text", text="Odoo could not complete this operation. Check permissions and connection settings.")]
@@ -143,6 +172,8 @@ class OdooHTTPTool(Tool):
         except Exception:
             failed = True
             content = [TextContent(type="text", text="Odoo operation failed")]
+        finally:
+            self._admission.release()
         logger.info("tool=%s subject=%s result=%s duration_ms=%d", self.name, subject,
                     "error" if failed else "ok", (time.monotonic() - started) * 1000)
         return ToolResult(content=content, is_error=failed)
@@ -152,13 +183,14 @@ async def create_app(config=None, *, backend=None, auth=None):
     """Build the app; injectable collaborators are for offline integration tests."""
     config = config or HTTPSettings.from_env()
     redactor = SecretRedactor((required("ODOO_API_KEY"), config.oidc_client_secret, config.signing_key))
-    for handler in logging.getLogger().handlers:
-        handler.addFilter(redactor)
+    install_redactor(redactor)
     for name in ("httpx", "httpcore", "odoorpc", "fastmcp.server.auth"):
         logging.getLogger(name).setLevel(logging.WARNING)
     auth = auth or OdooOAuthProvider(config)
     backend = backend or OdooMCPServer()
+    backend.projects.remote_limits = True
     limiter = anyio.CapacityLimiter(1)
+    admission = anyio.Semaphore(8)
 
     @asynccontextmanager
     async def lifespan(server):
@@ -177,13 +209,20 @@ async def create_app(config=None, *, backend=None, auth=None):
         if definition.name not in READ_TOOLS | config.write_tools:
             continue
         readonly = definition.name in READ_TOOLS
+        parameters = deepcopy(definition.inputSchema)
+        for name, schema in parameters.get("properties", {}).items():
+            if name == "limit" or name.endswith("_limit"):
+                schema.update(minimum=1, maximum=MAX_RECORDS)
+                if "default" in schema:
+                    schema["default"] = min(MAX_RECORDS, max(1, schema["default"]))
         tool = OdooHTTPTool(
             name=definition.name, description=definition.description,
-            parameters=definition.inputSchema,
+            parameters=parameters,
             annotations=ToolAnnotations(readOnlyHint=readonly, destructiveHint=not readonly,
                                         idempotentHint=readonly, openWorldHint=False),
         )
         tool._backend, tool._limiter, tool._redactor = backend, limiter, redactor
+        tool._admission = admission
         mcp.add_tool(tool)
 
     @mcp.custom_route("/healthz", methods=["GET"])
@@ -208,7 +247,7 @@ def main():
         app = await create_app()
         await uvicorn.Server(uvicorn.Config(
             app, host="0.0.0.0", port=8000, workers=1,
-            proxy_headers=False, access_log=False, log_level="info",
+            proxy_headers=False, access_log=False, log_level="info", limit_concurrency=64,
         )).serve()
     try:
         asyncio.run(serve())
