@@ -22,6 +22,8 @@ the Inventory app (``stock.quant``, ``stock.location``) for stock tools.
 import json
 import logging
 
+import odoorpc
+
 from mcp.types import TextContent
 
 from .base import OdooBase
@@ -289,6 +291,25 @@ class ManufacturingHandler(OdooBase):
     # ------------------------------------------------------------------
     # Tool 3: get_stock
     # ------------------------------------------------------------------
+    def _stock_groups(self, domain, measures, groupby):
+        """Normalize the current public aggregation API and older Odoo results."""
+        quant = self.odoo.env["stock.quant"]
+        try:
+            groups = quant.formatted_read_group(
+                domain, groupby=groupby, aggregates=measures,
+            )
+        except (odoorpc.error.RPCError, AttributeError) as exc:
+            # Only fall back for a missing API, never for access or query errors.
+            message = str(exc)
+            if "formatted_read_group" not in message or not any(
+                marker in message for marker in ("does not exist", "has no attribute")
+            ):
+                raise
+            return quant.read_group(domain, measures, groupby, lazy=False)
+        # New Odoo keys retain the aggregate suffix (e.g. quantity:sum).
+        return [{**group, **{measure.split(":", 1)[0]: group[measure]
+                            for measure in measures}} for group in groups]
+
     async def get_stock(self, arguments: dict) -> list[TextContent]:
         """On-hand quantity/value aggregates for a product set."""
         product_ids = arguments.get("product_ids")
@@ -308,7 +329,9 @@ class ManufacturingHandler(OdooBase):
                 "Error: exclude_location_ids and include_location_ids are mutually exclusive"
             ))]
 
-        domain = [("product_id", "in", list(product_ids))]
+        company_id = self.odoo.company_id
+        domain = [("product_id", "in", list(product_ids)),
+                  ("company_id", "=", company_id)]
         if usage:
             domain.append(("location_id.usage", "=", usage))
         if include_location_ids:
@@ -318,14 +341,13 @@ class ManufacturingHandler(OdooBase):
 
         groupby = ["product_id"] if group_by == "product" else ["product_id", "location_id"]
 
-        Quant = self.odoo.env["stock.quant"]
         have_value = True
         try:
-            groups = Quant.read_group(domain, ["quantity:sum", "value:sum"], groupby, lazy=False)
+            groups = self._stock_groups(domain, ["quantity:sum", "value:sum"], groupby)
         except Exception:
             have_value = False
             try:
-                groups = Quant.read_group(domain, ["quantity:sum"], groupby, lazy=False)
+                groups = self._stock_groups(domain, ["quantity:sum"], groupby)
             except Exception as e:
                 return [TextContent(type="text", text=(
                     "Error aggregating stock.quant. The Inventory app may not "
@@ -363,6 +385,7 @@ class ManufacturingHandler(OdooBase):
                 value = qty * cost_map.get(pid, 0.0)
             row = {
                 "product_id": pid,
+                "company_id": company_id,
                 "default_code": code_map.get(pid),
                 "quantity": round(qty, 4),
                 "value": round(value, 2),
@@ -376,8 +399,8 @@ class ManufacturingHandler(OdooBase):
         rows.sort(key=lambda r: (r["default_code"] or "", r.get("location_id") or 0))
         header = f"# Stock ({len(rows)} rows)\n\n"
         if not have_value:
-            header += ("Note: stock.quant has no 'value' field on this instance; "
-                       "value = quantity x standard_price.\n\n")
+            header += ("Note: stock.quant value aggregation is unavailable; "
+                       "estimated value = quantity x standard_price.\n\n")
         if not rows:
             header += "No quants matched (absence means zero on hand).\n\n"
         return [TextContent(type="text", text=header + _json_block(rows))]
@@ -391,7 +414,7 @@ class ManufacturingHandler(OdooBase):
         include_archived = arguments.get("include_archived", False)
 
         Location = self.odoo.env["stock.location"]
-        domain = []
+        domain = [("company_id", "=", self.odoo.company_id)]
         if usage:
             domain.append(("usage", "=", usage))
         if include_archived:
@@ -407,12 +430,14 @@ class ManufacturingHandler(OdooBase):
 
         rows = []
         if location_ids:
-            for loc in self.safe_read_records("stock.location", location_ids, ["id", "complete_name", "usage", "active"]):
+            for loc in self.safe_read_records("stock.location", location_ids, ["id", "complete_name", "usage", "active", "company_id"]):
                 rows.append({
                     "id": loc["id"],
                     "complete_name": loc.get("complete_name"),
                     "usage": loc.get("usage"),
                     "active": loc.get("active", True),
+                    "company_id": _m2o_id(loc.get("company_id")),
+                    "company_name": _m2o_name(loc.get("company_id")),
                 })
 
         header = f"# Stock Locations ({len(rows)})\n\n"

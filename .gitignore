@@ -1,6 +1,13 @@
 # Environment variables
 .env
 .env.local
+.env.*
+!.env.example
+.venv/
+.pytest_cache/
+.builddeps/
+.oauth-state/
+.audit/
 
 # local MCPs
 .mcp.json

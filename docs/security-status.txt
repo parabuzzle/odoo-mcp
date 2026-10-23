@@ -1,0 +1,40 @@
+SECURITY VALIDATION STATUS - 2026-10-14
+
+This branch includes fixes for the pre-deployment audit:
+- Generic upstream OAuth errors and log-record redaction before handlers run.
+- Serialized code/refresh/access-validation/revocation transitions and persistent
+  refresh replay detection that revokes the local grant family.
+- Mandatory ID-token expiry/issued-at and authorized-party checks, alongside the
+  library's signature, issuer and audience validation.
+- HTTP pagination bounds, bounded internal remote RPC searches, a bounded tool
+  queue and a response-size cap. Queries needing larger complete result sets fail.
+- Google Workspace mode with offline access and signed-domain enforcement.
+- Hash-locked runtime/build/test dependencies, pinned CI actions, secret scans,
+  image scanning, and publication of the exact tested image.
+- pip removed from runtime; liblzma5 patched to 5.8.1-1+deb13u2; MIT metadata,
+  third-party notices, security policy and installed-package inventories added.
+
+Validation: 37 offline pytest cases and 10 schema checks pass. The Docker image
+passes the non-root/read-only filesystem smoke test with all capabilities dropped.
+Tests use fake Odoo and fake OIDC services; no production credentials are used.
+
+Trivy's scanned patched image reported no Python advisories and no OS advisories
+with fixes available in its database. There are still 164 Debian package/advisory
+matches: 44 high, 58 medium, 61 low and 1 unknown. These are not 164 independent
+remote vulnerabilities. Many repeat util-linux source-package advisories across
+binary packages. High matches concern mount/nsenter privilege operations,
+systemd-homed, ncurses and Perl archive handling. Those operations are not exposed
+by the tool catalogue; the constrained non-root runtime reduces their relevance.
+This is a reachability assessment, not proof of non-exploitability. Monitor Debian
+updates and rescan releases. CI fails on fixable advisories at any severity;
+review full scans separately because that gate excludes unfixed advisories.
+
+Remaining deployment acceptance: actual Google Internal app/domain/MFA policy,
+ChatGPT login/refresh/revocation/restart, Odoo integration-account ACLs, public
+TLS/proxy/rate limits, container resource/storage limits and private secrets.
+Neither a passing offline suite nor this file certifies a live deployment.
+
+No production image is published merely by pushing this branch. Follow
+deployment-handoff.txt from the private deployment repository. Before a public
+supported release, enable GitHub private vulnerability reporting and preserve
+the source/notice obligations of all bundled dependencies and base components.

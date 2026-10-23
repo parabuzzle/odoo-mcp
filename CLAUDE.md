@@ -80,6 +80,42 @@ odoo-mcp/
 
 ## Architecture
 
+### Optional HTTP service
+
+- `odoo_mcp/http.py`: FastMCP Streamable HTTP adapter at `/mcp`; registers the
+  existing catalogue and serializes synchronous Odoo work off the event loop.
+- `odoo_mcp/auth.py`: configurable OIDC OAuth proxy with CIMD/DCR, PKCE, consent,
+  signed-identity allowlists, encrypted persistent grants, and local revocation.
+  Grant transitions share one process-local lock; consumed refresh tokens revoke
+  their family on replay. OIDC exp/iat/azp claims are checked in addition to the
+  library's signature/issuer/audience checks. Upstream diagnostics are sanitized
+  before the OAuth library can log or expose them. Google mode requests offline
+  access and enforces the signed Workspace `hd` claim.
+- `odoo_mcp/remote.py`: HTTP-only RPC result/query bounds; overlarge complete sets
+  fail rather than silently truncating totals. Stdio keeps its original behavior.
+  HTTP also limits admission to eight queued/running tools and responses to 1 MiB.
+- `odoo_mcp/config.py`: environment or mounted `NAME_FILE` settings. HTTP never
+  loads `.env`; only the stdio entry point does so.
+- One Odoo connection per deployment; approved people share its permissions.
+  `CompanyOdoo` pins every ORM RPC to `ODOO_COMPANY_ID` (default 1), including
+  calls with explicit context. Both stdio and HTTP use this company scope.
+  Stock/location queries additionally filter company_id; shared records in
+  other models remain governed by Odoo's normal ACLs and record rules.
+  Read-only HTTP tools are explicitly listed; writes need `MCP_WRITE_TOOLS`.
+- `Dockerfile`, `.dockerignore`, and `.github/workflows/container.yml` package,
+  test, and build the image. Ansible belongs in a separate deployment repo.
+  Hash-locked requirements cover runtime, test and build dependencies. CI scans
+  history and the image, then publishes the tested artifact without rebuilding
+  on main pushes and v* release tags. PR/manual runs only validate. Ansible pins
+  the registry digest recorded in the publishing job summary.
+  Runtime pip is removed; package/license inventories ship under /usr/share/odoo-mcp.
+- `docs/http-service.md` documents the deployment contract and identity-provider
+  setup. Run `python -m pytest tests -q` for offline HTTP/OAuth integration tests.
+  These tests must never use the production `.env` or live Odoo account.
+  `tests/test_security.py` covers audit regressions. The private Ansible session
+  can use `docs/deployment-handoff.txt`; live Google/Odoo/ChatGPT checks are still
+  required after deployment and must not be claimed from the offline tests.
+
 The codebase follows a modular architecture with separate handler modules for each Odoo app:
 
 ### Base Class (`odoo_mcp/base.py`)
@@ -94,8 +130,8 @@ model fields between major versions, and hardcoded field lists in `read()`/
 `write()` calls 500 the moment a referenced field disappears. `OdooBase` provides
 a caching `fields_get()`-based layer so this degrades gracefully:
 - `get_model_fields(model)` - cached `fields_get()` per model. The cache is a
-  **class attribute** shared across every handler instance (they share one
-  connection), so it costs one `fields_get` RPC per model for the whole process,
+  **instance attribute** shared by handlers within one `OdooMCPServer` connection,
+  so it costs one `fields_get` RPC per model for that connection,
   not one per call. On RPC failure it caches `{}` and the helpers **fail open**
   (drop nothing) so hardening never makes things worse than before.
 - `safe_read(model, ids, fields)` -> `(records, warnings)`: `read()` with the

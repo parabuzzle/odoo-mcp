@@ -1,0 +1,97 @@
+name: Container
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Scan Git history for secrets
+        run: >-
+          docker run --rm
+          --mount type=bind,src=${{ github.workspace }},dst=/repo,readonly
+          zricethezav/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+          git /repo --redact --log-opts=--all --no-banner
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --require-hashes -r requirements-build.lock
+      - run: python -m pip install --require-hashes -r requirements-test.lock
+      - run: python -m pip install --no-deps --no-build-isolation .
+      - run: python -m pytest tests -q
+      - run: python test_schema_layer.py
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Registry name
+        id: registry
+        shell: bash
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        id: meta
+        with:
+          images: ${{ steps.registry.outputs.image }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          load: true
+          tags: odoo-mcp:ci
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test container
+        run: >-
+          docker run --rm --read-only --tmpfs /tmp
+          --cap-drop ALL --security-opt no-new-privileges
+          --mount type=bind,src=${{ github.workspace }}/tests,dst=/tests,readonly
+          --entrypoint python odoo-mcp:ci /tests/container_smoke.py
+      - name: Scan the tested image for fixable vulnerabilities
+        run: >-
+          docker run --rm
+          --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock
+          aquasec/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+          image --scanners vuln --ignore-unfixed --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          --exit-code 1 odoo-mcp:ci
+      - name: Publish the exact tested image
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        shell: bash
+        run: |
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker tag odoo-mcp:ci "$tag"
+            docker push "$tag"
+          done <<< "$IMAGE_TAGS"
+          # Record the registry digest so Ansible can pin the exact tested image.
+          docker image inspect odoo-mcp:ci --format '{{range .RepoDigests}}{{println .}}{{end}}' >> "$GITHUB_STEP_SUMMARY"

@@ -8,6 +8,25 @@ Odoo provides lots of functionality through its various apps. The goal of this r
 
 _note: This MCP supports the Odoo SaaS product._
 
+## Remote HTTP service (Docker)
+
+For ChatGPT and other remote MCP clients, build the Docker image and expose
+`/mcp` through your HTTPS reverse proxy. The optional HTTP service supports
+configurable OIDC sign-in, dynamic OAuth registration (CIMD and DCR), explicit
+user allowlists, encrypted OAuth persistence, and mounted secret files.
+It serves one configured Odoo connection and exposes read tools by default;
+operators explicitly enable individual write tools.
+
+See [HTTP service deployment and configuration](docs/http-service.md). Ansible
+automation, production configuration, and secrets belong in your separate
+deployment repository. The stdio setup below remains supported.
+
+Google Workspace OIDC is supported with signed-domain checks and exact user
+allowlists. The [deployment handoff](docs/deployment-handoff.txt) covers Google,
+Docker, HTTPS and ChatGPT setup for a separate private Ansible repository.
+See [security guidance](SECURITY.md) and [third-party notices](THIRD_PARTY_NOTICES.txt)
+before distributing or operating an image.
+
 ## Setup
 
 You need some environment variables set in a `.env` file:
@@ -205,8 +224,8 @@ Scoped read tools for products, bills of materials, stock levels, and locations 
 
 - **list_products**: List products by internal-reference prefix (e.g. `IB`) or explicit IDs, optionally including archived ones. Returns code, name, template, active, type, `is_storable`, and a variant-aware `has_bom` flag
 - **get_boms**: Get complete BoM structures for a product set with lines resolved to component identity (code, name, qty, UoM, active, storable) in one call. Variant-bound BoMs report their variant; archived components on active BoM lines are surfaced instead of silently vanishing
-- **get_stock**: On-hand quantity and value aggregates for a product set, grouped by product or product+location, with location include/exclude scoping. Negative quantities pass through; absence of a row means zero
-- **list_locations**: List stock locations (ID, complete name, usage, active) so callers stop hardcoding location IDs
+- **get_stock**: On-hand quantity and value aggregates for a product set, grouped by product or product+location, with location include/exclude scoping. Supports the current Odoo `formatted_read_group` API and legacy `read_group`. Negative quantities pass through; absence of a row means zero
+- **list_locations**: List stock locations (ID, complete name, usage, active) so callers stop hardcoding location IDs. Names can repeat across active and archived records; use IDs and the active flag to distinguish them. An active location does not establish that it holds stock
 
 ### Accounting (Read-Only)
 

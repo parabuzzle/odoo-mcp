@@ -1,9 +1,11 @@
 """Base class for Odoo MCP handlers."""
 
-import os
 import logging
 import odoorpc
 from mcp.types import TextContent
+from urllib.parse import urlsplit
+from .config import setting
+from .connection import CompanyOdoo
 
 logger = logging.getLogger("odoo-mcp")
 
@@ -11,22 +13,17 @@ logger = logging.getLogger("odoo-mcp")
 class OdooBase:
     """Base class with shared Odoo connection logic."""
 
-    # Per-model schema cache (fields_get results), shared across ALL handler
-    # instances because they all talk to the same Odoo connection. This keeps
-    # the cost of the defensive schema layer at one fields_get RPC per model for
-    # the whole process lifetime, not one per tool call.
-    _fields_cache: dict = {}
-
     def __init__(self):
         """Initialize with no connection."""
         self.odoo = None
+        self._fields_cache = {}
 
     def connect_odoo(self):
         """Connect to Odoo instance."""
-        odoo_url = os.getenv("ODOO_URL", "").replace("https://", "").replace("http://", "")
-        odoo_db = os.getenv("ODOO_DB")
-        odoo_username = os.getenv("ODOO_USERNAME")
-        odoo_api_key = os.getenv("ODOO_API_KEY")
+        odoo_url = setting("ODOO_URL")
+        odoo_db = setting("ODOO_DB")
+        odoo_username = setting("ODOO_USERNAME")
+        odoo_api_key = setting("ODOO_API_KEY")
 
         if not all([odoo_url, odoo_db, odoo_username, odoo_api_key]):
             raise ValueError(
@@ -34,15 +31,31 @@ class OdooBase:
                 "Please set ODOO_URL, ODOO_DB, ODOO_USERNAME, and ODOO_API_KEY"
             )
 
-        logger.info(f"Connecting to Odoo at {odoo_url}...")
+        parsed = urlsplit(odoo_url if "://" in odoo_url else f"https://{odoo_url}")
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+                or parsed.password or parsed.path not in ("", "/")
+                or parsed.query or parsed.fragment):
+            raise ValueError("ODOO_URL must identify an HTTPS Odoo origin")
+        logger.info("Connecting to Odoo")
 
         # Create Odoo connection
-        self.odoo = odoorpc.ODOO(odoo_url, protocol="jsonrpc+ssl", port=443)
+        company_id = int(setting("ODOO_COMPANY_ID", "1"))
+        if company_id <= 0:
+            raise ValueError("ODOO_COMPANY_ID must be a positive integer")
+        connection_type = CompanyOdoo
+        if getattr(self, "remote_limits", False):
+            from .remote import RemoteOdoo
+            connection_type = RemoteOdoo
+        connection = connection_type(parsed.hostname, protocol="jsonrpc+ssl", port=parsed.port or 443, timeout=30)
+        connection.company_id = company_id
 
         # Login with API key
-        self.odoo.login(odoo_db, odoo_username, odoo_api_key)
+        connection.login(odoo_db, odoo_username, odoo_api_key)
+        connection.env.context.update(allowed_company_ids=[company_id],
+                                      company_id=company_id, force_company=company_id)
+        self.odoo = connection
 
-        logger.info(f"Connected to Odoo as {odoo_username}")
+        logger.info("Connected to Odoo")
 
     # ------------------------------------------------------------------
     # Defensive schema layer
@@ -63,7 +76,7 @@ class OdooBase:
         "fail open" (they don't drop anything) so we never make things worse
         than the un-hardened behaviour.
         """
-        cache = OdooBase._fields_cache
+        cache = self._fields_cache
         if model_name not in cache:
             try:
                 Model = self.odoo.env[model_name]

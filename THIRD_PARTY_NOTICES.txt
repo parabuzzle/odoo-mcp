@@ -1,0 +1,28 @@
+Odoo MCP is licensed under MIT; see LICENSE.
+
+This application uses OdooRPC, copyright its respective contributors, under
+LGPL-3.0-or-later. OdooRPC and its use are covered by that license. Its unmodified
+Python source and license are installed in site-packages/odoorpc and the OdooRPC
+distribution metadata. Upstream: https://github.com/OCA/odoorpc
+Users may modify or replace this library and rebuild the image. This project
+does not restrict reverse engineering for debugging modifications to the library.
+
+Certifi is licensed under MPL-2.0; its source/data and license remain installed
+in site-packages. Upstream: https://github.com/certifi/python-certifi
+
+Other Python components retain their own licenses and notices in their installed
+distribution metadata. The image includes a version/license/source inventory at
+/usr/share/odoo-mcp/python-packages.json and an OS package inventory at
+/usr/share/odoo-mcp/os-packages.txt. Exact Python artifacts are recorded by SHA-256
+in requirements-http.lock. These dependencies are not relicensed under MIT.
+
+The Python/Debian base contains components under additional licenses, including
+GPL and LGPL. Preserve /usr/share/doc/*/copyright and /usr/share/common-licenses
+when redistributing the image. Debian sources are available through the Debian
+source archives (https://sources.debian.org/ and https://snapshot.debian.org/).
+Python source: https://www.python.org/downloads/source/
+Base image source/build recipes: https://github.com/docker-library/python
+
+When distributing a release, retain the image's notices and provide the matching
+source materials required by each component's license. The inventories and links
+identify components; they do not replace those license obligations.

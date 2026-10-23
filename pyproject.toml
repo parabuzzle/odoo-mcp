@@ -3,9 +3,11 @@ name = "odoo-mcp"
 version = "0.1.0"
 description = "Model Context Protocol server for Odoo cloud apps"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt"]
 requires-python = ">=3.10"
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.30.0,<2",
     "odoorpc>=0.10.0",
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
@@ -16,4 +18,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project.scripts]
-odoo-mcp = "odoo_mcp.server:main"
+odoo-mcp = "odoo_mcp.server:cli"
+odoo-mcp-http = "odoo_mcp.http:main"
+
+[project.optional-dependencies]
+http = ["fastmcp==3.4.8", "mcp==1.30.0"]
+test = ["pytest>=8,<10", "httpx>=0.28,<1"]

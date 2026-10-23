@@ -1,0 +1,186 @@
+HANDOFF FOR THE CODEX SESSION IN THE PRIVATE ANSIBLE REPOSITORY
+
+Deploy the Odoo MCP Docker service on Owl using this repo's existing Docker,
+reverse-proxy, DNS/TLS, secret-management and service conventions. Do not add
+Ansible files to the public odoo-mcp repository. Start with read-only tools.
+
+Application repository: https://github.com/parabuzzle/odoo-mcp
+Branch: feature/docker-http-oauth
+Use the security-hardening commit containing THIS handoff, not the earlier
+df0a3d7 implementation. Pin the chosen Git commit and deployed image digest.
+The service is locally tested; live Google/ChatGPT/Odoo acceptance is still
+required. No hostname, Google app or deployment has been provisioned by this repo.
+
+1. Establish deployment inputs
+
+- Public hostname (example only: odoo-mcp.example.com), DNS to the existing
+  HTTPS proxy, and a valid public certificate.
+- Exact Google Workspace domain and individual users allowed to use Odoo.
+- Odoo origin, database name, restricted integration username and API key.
+  Confirm the database name; do not infer it from the hostname.
+- Published image from ghcr.io/parabuzzle/odoo-mcp. Pushes to main publish main
+  and sha-<full-commit> tags after tests, container smoke testing and scanning.
+  v* release tags also publish version tags; PRs and manual runs do not publish.
+  Copy the immutable ghcr.io/parabuzzle/odoo-mcp@sha256:<digest> reference from
+  the publishing job summary into the private Ansible configuration. Roll back
+  by restoring the previous digest. The repository owner must configure GHCR
+  package visibility: public packages allow anonymous pulls; private packages
+  require registry credentials on the deployment host.
+
+2. Google Workspace setup (operator/admin step)
+
+Use an organization-owned Google Cloud project. Configure Google Auth Platform
+with an Internal audience. Create a Web application OAuth client. Its sole
+production authorized redirect URI should be:
+
+  https://<public-hostname>/auth/callback
+
+Keep identity scopes to openid, profile and email. Apply the organization's MFA
+and app-access policy. This is an OIDC web client, not a Workspace custom SAML
+application. Save its client secret directly to the private secret store; do not
+paste it into chat or put it in a public repository.
+
+The MCP requests offline access and consent and checks Google's signed hd claim
+against the configured Workspace domain. It also checks the exact user allowlist.
+The Google OAuth client ID/secret belong ONLY to the server. They are not the
+client credentials to enter into ChatGPT's MCP connection dialog.
+
+Google documentation:
+https://developers.google.com/identity/protocols/oauth2/web-server#creatingcred
+https://developers.google.com/identity/protocols/oauth2/web-server#offline
+
+3. Odoo account and secrets
+
+Use a dedicated integration account with the smallest Odoo groups/record rules
+needed for the initial read tools. All allowed Google users share this Odoo
+account's permissions; the service does not impersonate individual Odoo users.
+Generate an Odoo API key for this account. Do not reuse an administrator's key.
+
+Create these secrets using the repo's vault/secret manager:
+  odoo_api_key
+  google_client_secret
+  oauth_signing_key
+
+Generate oauth_signing_key once using a cryptographic random generator (at least
+32 random bytes; secrets.token_urlsafe(48) is suitable). Keep it stable across
+Ansible reruns and container replacements. Do not regenerate it on each deploy.
+Use no_log and suppress diff for secret-writing tasks. Never expose secret values
+in command lines, registered-task debug output, process environment or logs.
+
+Mount secret files read-only at /run/secrets. They must be readable by container
+UID/GID 10001:10001. For host bind mounts, root:10001 ownership, directory 0750
+and files 0440 is one option (adapt for any Docker user-namespace mapping).
+Keep all parent directories appropriately traversable. Ansible should restart
+the service when secret files change. Store backups separately from OAuth state.
+
+4. Container configuration
+
+Non-secret environment (substitute actual private deployment values):
+
+  MCP_PUBLIC_URL=https://<public-hostname>
+  MCP_OIDC_PROVIDER=google
+  MCP_OIDC_CONFIG_URL=https://accounts.google.com/.well-known/openid-configuration
+  MCP_OIDC_CLIENT_ID=<Google web OAuth client ID>
+  MCP_OIDC_CLIENT_SECRET_FILE=/run/secrets/google_client_secret
+  MCP_GOOGLE_WORKSPACE_DOMAIN=<exact-workspace-domain>
+  MCP_OIDC_SCOPES=openid profile email
+  MCP_OIDC_TOKEN_AUTH_METHOD=client_secret_basic
+  MCP_ALLOWED_EMAILS=<one-or-more-exact-approved-workspace-emails>
+  MCP_ALLOWED_SUBJECTS=
+  MCP_OAUTH_SIGNING_KEY_FILE=/run/secrets/oauth_signing_key
+  MCP_STATE_DIR=/data/oauth
+  MCP_WRITE_TOOLS=
+  ODOO_URL=https://<odoo-hostname>
+  ODOO_DB=<confirmed-database-name>
+  ODOO_USERNAME=<restricted-integration-account>
+  ODOO_API_KEY_FILE=/run/secrets/odoo_api_key
+
+Lists are comma-separated; wildcards are forbidden. Stable Google subject IDs
+are preferred when available from a trusted identity record. Either configured
+allowlist can authorize a user, so remove the email entry if replacing it with a
+subject-only policy. Google domain enforcement applies to both allowlists.
+Never set both NAME and NAME_FILE for the same setting.
+
+Runtime requirements:
+- Exactly one container and one worker; do not use rolling overlap on the same
+  OAuth state volume. Stop the old instance before starting its replacement.
+- UID/GID 10001:10001, read-only root filesystem, all capabilities dropped,
+  no-new-privileges, restart unless-stopped, graceful stop timeout ~60 seconds.
+- Persistent writable /data bind mount or named volume. Pre-create bind mounts
+  with UID/GID 10001:10001 and mode 0700. Preserve /data and the signing key.
+- /tmp tmpfs (e.g. 64 MiB, nosuid/nodev/noexec), memory limit (start at 1 GiB),
+  CPU limit (start at 1 CPU) and pids limit (e.g. 128). Tune from measurements.
+- Port 8000 ONLY on the private proxy network, or bind 127.0.0.1:8000 if the proxy
+  runs on the host. No public Docker port binding. No Docker socket mount.
+- Log rotation and storage quotas/monitoring, including the OAuth volume.
+- Allow outbound TLS to Odoo, Google discovery/token/JWKS endpoints, and public
+  client-metadata/JWKS endpoints used by ChatGPT CIMD. Preserve the library's
+  SSRF protections; do not set FASTMCP_SSRF_TRUST_PROXY to bypass them.
+
+5. HTTPS reverse proxy
+
+Proxy the ENTIRE hostname root to port 8000. /mcp is the tool endpoint; OAuth
+discovery, authorize/token/register/revoke, consent and callback routes also need
+to work at the root. Do not place the service beneath a path prefix.
+
+Preserve the public Host and Authorization headers. Do not add a separate browser
+SSO login or Basic Auth in front of MCP/OAuth routes. Require TLS, retain secure
+cookies, disable caching/buffering as appropriate for streaming HTTP, and never
+automatically retry POST requests. Start with a 180-second upstream tool timeout,
+short header/body timeouts (e.g. 15 seconds), a 2 MiB request-body cap and modest
+connection limits. The app caps OAuth request bodies at 64 KiB.
+
+Apply rate limits to registration, authorization, token exchange and revocation,
+as well as the general service. A starting point for this small deployment is
+10 requests/minute per client IP for /register, 60/minute for the other OAuth
+routes, and 120/minute for /mcp, with small bursts. Add a global registration
+ceiling so distributed abuse cannot fill the state volume. Tune against real
+ChatGPT behavior; enforce limits using trusted proxy-derived IPs only.
+
+Do not log Authorization headers, request/response bodies or OAuth query strings
+(codes/state). Either disable access logs for this hostname or log only sanitized
+path/status/timing fields. Verify upstream proxy/CDN/WAF logs follow the same rule.
+
+6. Verify before enabling normal use
+
+- GET /healthz returns 200. This is liveness, not an Odoo connectivity test.
+- GET /.well-known/oauth-authorization-server returns this public origin's URLs.
+- GET /.well-known/oauth-protected-resource/mcp identifies /mcp and its auth server.
+- POST /mcp without a token returns 401 with a WWW-Authenticate metadata hint.
+- Direct external port 8000 is unreachable; TLS and rate limits work.
+- Create the ChatGPT connection below and sign in with an approved Workspace user.
+- Run list_projects with limit=1 (or another permitted, low-impact read tool).
+- Confirm write tools are absent. Confirm an unapproved account cannot connect.
+- Test disconnect/revocation, reconnect, refresh after token expiry and a service
+  restart with persistent state. Removing an allowlisted user and restarting must
+  reject their existing token. A tool already authorized may finish in flight.
+- Inspect logs locally for accidental secrets/data, without copying them to chat.
+- Rerun Ansible: no unnecessary change, key rotation or state reset should occur.
+
+7. Connect ChatGPT
+
+In ChatGPT on the web, open Plugins, select + and Add custom MCP server. Use:
+  Server URL: https://<public-hostname>/mcp
+  Authentication: OAuth
+  Client registration: CIMD (or DCR where offered)
+
+Do not enter the Google web application's client secret here. Finish Google
+sign-in and the MCP consent screen, create/install the plugin, then select it
+with @ in a chat. Availability depends on workspace permissions. Keep the initial
+rollout private to the intended users. Official setup guide:
+https://developers.openai.com/api/docs/guides/custom-mcp-server
+
+8. Operations and rollback
+
+Remove users from BOTH allowlists as applicable and restart for immediate local
+offboarding. Google account suspension alone is not an instantaneous ID-token
+revocation mechanism. Refresh-token replay invalidates the full local grant and
+requires reconnection. The app's /revoke affects the local grant, not the Odoo key.
+
+For a compromise: stop the service, rotate the Odoo key, replace the signing key
+and OAuth state together, then reconnect clients. Treat old state backups as
+capable of restoring revoked grants. Back up sensitive state encrypted, with the
+signing key under separate access controls. For ordinary upgrades, retain both.
+Rollback only to an approved image containing the security fixes, never df0a3d7.
+Record the deployed image digest, checks performed, and unresolved infrastructure
+requirements in the private repo's deployment notes.
