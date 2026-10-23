@@ -8,7 +8,7 @@ license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt"]
 requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.30.0,<2",
-    "odoorpc>=0.10.0",
+    "odoorpc>=0.10.1",
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
 ]
