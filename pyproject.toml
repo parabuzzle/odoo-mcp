@@ -10,7 +10,7 @@ dependencies = [
     "mcp>=1.30.0,<2",
     "odoorpc>=0.10.0",
     "python-dotenv>=1.0.0",
-    "requests>=2.31.0",
+    "requests>=2.34.2",
 ]
 
 [build-system]
