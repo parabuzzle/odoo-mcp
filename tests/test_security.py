@@ -30,10 +30,17 @@ def test_google_authorization_and_callback_failure(setup, monkeypatch, capsys, c
             "state": "test-state", "code_challenge": CHALLENGE, "code_challenge_method": "S256"})
         consent_url = started.headers["location"]
         consent = client.get(consent_url)
+        assert consent.headers["referrer-policy"] == "strict-origin"
         csrf = re.search(r'name="csrf_token" value="([^"]+)"', consent.text).group(1)
         txn = re.search(r'name="txn_id" value="([^"]+)"', consent.text).group(1)
+        form = {"txn_id": txn, "csrf_token": csrf, "action": "approve"}
+        for origin in ("null", "https://attacker.example"):
+            rejected = client.post(urlsplit(consent_url).path,
+                data=form, headers={"Origin": origin})
+            assert rejected.status_code == 403
+            assert rejected.json() == {"error": "Untrusted origin"}
         approved = client.post(urlsplit(consent_url).path,
-            data={"txn_id": txn, "csrf_token": csrf, "action": "approve"})
+            data=form, headers={"Origin": config.public_url})
         parameters = parse_qs(urlsplit(approved.headers["location"]).query)
         assert parameters["access_type"] == ["offline"]
         assert parameters["prompt"] == ["consent"]

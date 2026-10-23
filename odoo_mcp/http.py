@@ -119,7 +119,9 @@ class RequestBoundary:
                 message.setdefault("headers", []).extend([
                     (b"cache-control", b"no-store"),
                     (b"x-content-type-options", b"nosniff"),
-                    (b"referrer-policy", b"no-referrer"),
+                    # Preserve Origin on consent form POSTs without leaking
+                    # OAuth paths or query strings in the Referer header.
+                    (b"referrer-policy", b"strict-origin"),
                 ])
             await send(message)
 
