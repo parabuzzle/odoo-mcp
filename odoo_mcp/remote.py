@@ -1,6 +1,6 @@
 """Resource bounds for the shared remote Odoo connection (not stdio)."""
 
-import odoorpc
+from .connection import CompanyOdoo
 
 MAX_RECORDS = 500
 
@@ -9,13 +9,14 @@ class RemoteLimitError(ValueError):
     """The operation needs narrower filters or pagination."""
 
 
-class RemoteOdoo(odoorpc.ODOO):
+class RemoteOdoo(CompanyOdoo):
     def execute(self, model, method, *args):
         return self.execute_kw(model, method, args)
 
     def execute_kw(self, model, method, args=None, kwargs=None):
         args, kwargs = list(args or []), dict(kwargs or {})
-        positions = {"search": 2, "search_read": 3, "read_group": 4}
+        positions = {"search": 2, "search_read": 3, "read_group": 4,
+                     "formatted_read_group": 5}
         if method in positions:
             position = positions[method]
             limit = args[position] if len(args) > position else kwargs.get("limit")

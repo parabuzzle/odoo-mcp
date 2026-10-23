@@ -97,6 +97,10 @@ odoo-mcp/
 - `odoo_mcp/config.py`: environment or mounted `NAME_FILE` settings. HTTP never
   loads `.env`; only the stdio entry point does so.
 - One Odoo connection per deployment; approved people share its permissions.
+  `CompanyOdoo` pins every ORM RPC to `ODOO_COMPANY_ID` (default 1), including
+  calls with explicit context. Both stdio and HTTP use this company scope.
+  Stock/location queries additionally filter company_id; shared records in
+  other models remain governed by Odoo's normal ACLs and record rules.
   Read-only HTTP tools are explicitly listed; writes need `MCP_WRITE_TOOLS`.
 - `Dockerfile`, `.dockerignore`, and `.github/workflows/container.yml` package,
   test, and build the image. Ansible belongs in a separate deployment repo.

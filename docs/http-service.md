@@ -10,6 +10,12 @@ Odoo using a separately mounted API key. Odoo credentials never belong in client
 registration, OAuth tokens, tool arguments, or chat. Use a restricted Odoo
 integration account; bridge read-only policy adds a second boundary.
 
+All ORM calls pin the selected company through `allowed_company_ids`,
+`company_id`, and `force_company`. `ODOO_COMPANY_ID` defaults to `1` and is
+operator-configured, not a tool argument. Odoo ACLs and record rules still apply;
+company-neutral records can remain visible. Stock and location queries also
+filter explicitly by company, and location results identify their owner.
+
 ## Sign-in and dynamic registration
 
 The HTTP extra uses the pinned FastMCP OIDC proxy for discovery, authorization
@@ -71,6 +77,7 @@ The HTTP service deliberately does not load a repository `.env` file.
 | `ODOO_URL` | Required HTTPS Odoo origin |
 | `ODOO_DB` | Required Odoo database name |
 | `ODOO_USERNAME` | Required restricted integration user |
+| `ODOO_COMPANY_ID` | Single company for all tools; positive integer, default `1` |
 | `ODOO_API_KEY_FILE` | Mounted Odoo API key |
 | `MCP_STATE_DIR` | OAuth storage path; default `/data/oauth` |
 | `MCP_WRITE_TOOLS` | Empty by default. Comma-separated exact write tool names, e.g. `create_task,update_task` |

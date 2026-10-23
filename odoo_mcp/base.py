@@ -5,6 +5,7 @@ import odoorpc
 from mcp.types import TextContent
 from urllib.parse import urlsplit
 from .config import setting
+from .connection import CompanyOdoo
 
 logger = logging.getLogger("odoo-mcp")
 
@@ -38,14 +39,20 @@ class OdooBase:
         logger.info("Connecting to Odoo")
 
         # Create Odoo connection
-        connection_type = odoorpc.ODOO
+        company_id = int(setting("ODOO_COMPANY_ID", "1"))
+        if company_id <= 0:
+            raise ValueError("ODOO_COMPANY_ID must be a positive integer")
+        connection_type = CompanyOdoo
         if getattr(self, "remote_limits", False):
             from .remote import RemoteOdoo
             connection_type = RemoteOdoo
         connection = connection_type(parsed.hostname, protocol="jsonrpc+ssl", port=parsed.port or 443, timeout=30)
+        connection.company_id = company_id
 
         # Login with API key
         connection.login(odoo_db, odoo_username, odoo_api_key)
+        connection.env.context.update(allowed_company_ids=[company_id],
+                                      company_id=company_id, force_company=company_id)
         self.odoo = connection
 
         logger.info("Connected to Odoo")

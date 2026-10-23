@@ -224,8 +224,8 @@ Scoped read tools for products, bills of materials, stock levels, and locations 
 
 - **list_products**: List products by internal-reference prefix (e.g. `IB`) or explicit IDs, optionally including archived ones. Returns code, name, template, active, type, `is_storable`, and a variant-aware `has_bom` flag
 - **get_boms**: Get complete BoM structures for a product set with lines resolved to component identity (code, name, qty, UoM, active, storable) in one call. Variant-bound BoMs report their variant; archived components on active BoM lines are surfaced instead of silently vanishing
-- **get_stock**: On-hand quantity and value aggregates for a product set, grouped by product or product+location, with location include/exclude scoping. Negative quantities pass through; absence of a row means zero
-- **list_locations**: List stock locations (ID, complete name, usage, active) so callers stop hardcoding location IDs
+- **get_stock**: On-hand quantity and value aggregates for a product set, grouped by product or product+location, with location include/exclude scoping. Supports the current Odoo `formatted_read_group` API and legacy `read_group`. Negative quantities pass through; absence of a row means zero
+- **list_locations**: List stock locations (ID, complete name, usage, active) so callers stop hardcoding location IDs. Names can repeat across active and archived records; use IDs and the active flag to distinguish them. An active location does not establish that it holds stock
 
 ### Accounting (Read-Only)
 

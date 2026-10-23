@@ -1653,7 +1653,8 @@ class OdooMCPServer:
                 description=(
                     "On-hand stock aggregates (stock.quant) for a product set, grouped by product or "
                     "product+location, with summed quantity and value. Read-only. Negative quantities pass "
-                    "through. Products with zero quants produce no rows (treat absence as zero)."
+                    "through. Restricted to the server-configured company (default ID 1). "
+                    "Products with zero quants produce no rows (treat absence as zero within that company)."
                 ),
                 inputSchema={
                     "type": "object",
@@ -1670,8 +1671,11 @@ class OdooMCPServer:
             Tool(
                 name="list_locations",
                 description=(
-                    "List stock locations (stock.location) with id, complete name, usage, and active flag, "
-                    "so callers can scope stock queries without hardcoding location IDs. Read-only."
+                    "List stock locations (stock.location) for the server-configured company (default ID 1), "
+                    "with id, complete name, usage, active flag, company_id, and company_name, "
+                    "so callers can scope stock queries without hardcoding location IDs. Names may be "
+                    "duplicated across active and archived records: distinguish locations by ID and active "
+                    "flag. Active status does not imply stock is present; use get_stock for quantities. Read-only."
                 ),
                 inputSchema={
                     "type": "object",
