@@ -105,7 +105,9 @@ odoo-mcp/
 - `Dockerfile`, `.dockerignore`, and `.github/workflows/container.yml` package,
   test, and build the image. Ansible belongs in a separate deployment repo.
   Hash-locked requirements cover runtime, test and build dependencies. CI scans
-  history and the image, then publishes the tested artifact without rebuilding.
+  history and the image, then publishes the tested artifact without rebuilding
+  on main pushes and v* release tags. PR/manual runs only validate. Ansible pins
+  the registry digest recorded in the publishing job summary.
   Runtime pip is removed; package/license inventories ship under /usr/share/odoo-mcp.
 - `docs/http-service.md` documents the deployment contract and identity-provider
   setup. Run `python -m pytest tests -q` for offline HTTP/OAuth integration tests.

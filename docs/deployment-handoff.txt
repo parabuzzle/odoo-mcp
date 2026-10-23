@@ -18,12 +18,14 @@ required. No hostname, Google app or deployment has been provisioned by this rep
 - Exact Google Workspace domain and individual users allowed to use Odoo.
 - Odoo origin, database name, restricted integration username and API key.
   Confirm the database name; do not infer it from the hostname.
-- Image build/distribution method already used by the private Ansible repo.
-  A pushed Git branch does not create a registry image. Build the pinned commit
-  on the existing build host, smoke-test/scan it and distribute that exact image.
-  The application's optional v* release-tag workflow publishes to
-  ghcr.io/parabuzzle/odoo-mcp after tests; no release tag is required for the
-  private deployment repo to build and distribute its own pinned image.
+- Published image from ghcr.io/parabuzzle/odoo-mcp. Pushes to main publish main
+  and sha-<full-commit> tags after tests, container smoke testing and scanning.
+  v* release tags also publish version tags; PRs and manual runs do not publish.
+  Copy the immutable ghcr.io/parabuzzle/odoo-mcp@sha256:<digest> reference from
+  the publishing job summary into the private Ansible configuration. Roll back
+  by restoring the previous digest. The repository owner must configure GHCR
+  package visibility: public packages allow anonymous pulls; private packages
+  require registry credentials on the deployment host.
 
 2. Google Workspace setup (operator/admin step)
 

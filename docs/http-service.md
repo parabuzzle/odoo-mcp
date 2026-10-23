@@ -107,14 +107,20 @@ Build locally:
 docker build -t odoo-mcp:local .
 ```
 
-The CI workflow tests and builds PRs. Pushing a `v*` release tag publishes a
-versioned image to `ghcr.io/<owner>/<repository>`; ordinary branch builds do not
-publish. Registry package visibility must be configured by the repository owner.
+The CI workflow tests and builds PRs without publishing. Each push to `main`
+publishes `main` and `sha-<full-commit>` tags to `ghcr.io/<owner>/<repository>`
+after all checks pass. Pushing a `v*` release tag also publishes a versioned image.
+Manual workflow runs only validate. Registry package visibility must be configured
+by the repository owner; public GHCR packages allow anonymous pulls. Private
+packages require registry credentials on the Ansible-managed Docker host.
 CI publishes the exact image that passed the smoke test and vulnerability gate,
 without rebuilding it. Python dependencies and build tooling use hash-locked
 requirements. The runtime excludes pip and build tooling and includes package
 and license inventories under `/usr/share/odoo-mcp`.
-Your deployment repository should pin an image digest. No Ansible or production
+The publishing job writes the pullable image digest to its GitHub Actions summary.
+Your deployment repository should pin that reference, for example
+`ghcr.io/parabuzzle/odoo-mcp@sha256:<digest>`, rather than the moving `main` tag.
+No Ansible or production
 deployment inventory lives in this repository.
 
 Runtime requirements:

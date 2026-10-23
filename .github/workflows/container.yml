@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: container-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -44,7 +48,7 @@ jobs:
         shell: bash
         run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -54,7 +58,8 @@ jobs:
         with:
           images: ${{ steps.registry.outputs.image }}
           tags: |
-            type=sha
+            type=sha,format=long
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
             type=semver,pattern={{version}}
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -78,7 +83,7 @@ jobs:
           image --scanners vuln --ignore-unfixed --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           --exit-code 1 odoo-mcp:ci
       - name: Publish the exact tested image
-        if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         env:
           IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
         shell: bash
@@ -88,3 +93,5 @@ jobs:
             docker tag odoo-mcp:ci "$tag"
             docker push "$tag"
           done <<< "$IMAGE_TAGS"
+          # Record the registry digest so Ansible can pin the exact tested image.
+          docker image inspect odoo-mcp:ci --format '{{range .RepoDigests}}{{println .}}{{end}}' >> "$GITHUB_STEP_SUMMARY"
