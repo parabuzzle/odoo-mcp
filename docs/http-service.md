@@ -55,6 +55,31 @@ Use CIMD or DCR without manually supplying client credentials. Complete sign-in
 and the consent screen. Registration alone never grants Odoo access. Discovery
 and protocol endpoints live at the origin root; do not mount behind a URL prefix.
 
+## MCP 2 upgrade
+
+The HTTP image pins MCP SDK 2.3.0 and FastMCP 4.1.3. It supports both
+the 2025-11-25 handshake protocol and the 2026-07-28 sessionless protocol.
+Keep the existing public URL, signing secret, and OAuth data volume when
+upgrading from FastMCP 3.4.11 / MCP 1.30.0. A cross-version test verifies
+that existing encrypted grants can still authenticate and refresh, and that
+previously revoked grants remain denied. No routine state reset is needed.
+Back up the volume while the service is stopped; restoring an older backup
+can restore revoked grants (see the recovery guidance below).
+
+FastMCP 4 uses `httpx2` and the operating system CA store for upstream OIDC
+requests. Keep the image's system CA updates; custom CAs can be supplied
+through `SSL_CERT_FILE` / `SSL_CERT_DIR`. Odoo's Requests client still uses
+its certifi bundle. The single-container, single-worker requirement remains:
+sessionless MCP does not remove our Odoo session and grant-lock constraints.
+
+For a release check, `tests/oauth_upgrade_smoke.py` can seed synthetic grants
+using the old checkout's `test_http_service` helper and verify them using the
+new helper. Set `PYTHONPATH` to the respective checkout and its `tests`
+directory, and invoke the script via `runpy.run_path(..., run_name="__main__")`
+from that checkout with `seed <temporary-directory>` then
+`verify <same-directory>` in the corresponding dependency environments.
+The test contacts neither Odoo nor a real identity provider.
+
 ## Configuration contract for the deployment repository
 
 All settings support either `NAME` or a UTF-8 mounted `NAME_FILE`, never both.

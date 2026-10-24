@@ -6,7 +6,8 @@ from typing import Any
 import asyncio
 
 from mcp.server import Server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, ListToolsResult, CallToolResult
+from jsonschema import Draft202012Validator
 from dotenv import load_dotenv
 
 # Import handlers
@@ -33,7 +34,8 @@ class OdooMCPServer:
 
     def __init__(self):
         """Initialize the Odoo MCP server."""
-        self.server = Server("odoo-mcp")
+        self.server = Server("odoo-mcp", on_list_tools=self._list_tools_request,
+                             on_call_tool=self._call_tool_request)
 
         # Initialize handlers
         self.projects = ProjectsHandler()
@@ -55,9 +57,19 @@ class OdooMCPServer:
         # Let the inventory dashboard builder also create Documents spreadsheets.
         self.dashboards.spreadsheets = self.spreadsheets
 
-        # Register handlers
-        self.server.list_tools()(self.list_tools)
-        self.server.call_tool()(self.call_tool)
+    async def _list_tools_request(self, ctx, params):
+        return ListToolsResult(tools=await self.list_tools())
+
+    async def _call_tool_request(self, ctx, params):
+        # SDK 2's low-level server no longer validates tool arguments for us.
+        definition = next((tool for tool in await self.list_tools()
+                           if tool.name == params.name), None)
+        arguments = params.arguments or {}
+        if definition is None:
+            return CallToolResult(content=[TextContent(type="text", text="Unknown tool")], is_error=True)
+        if not Draft202012Validator(definition.input_schema).is_valid(arguments):
+            return CallToolResult(content=[TextContent(type="text", text="Invalid tool arguments; consult the tool schema")], is_error=True)
+        return CallToolResult(content=await self.call_tool(params.name, arguments))
 
     def connect_odoo(self):
         """Connect to Odoo instance and share with handlers."""

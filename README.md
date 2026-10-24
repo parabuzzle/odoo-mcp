@@ -44,7 +44,7 @@ ODOO_API_KEY=<your api key>
 Install dependencies:
 
 ```bash
-pip install mcp odoorpc python-dotenv
+pip install .
 ```
 
 Or install the package in development mode:

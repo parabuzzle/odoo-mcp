@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import odoorpc
 import pytest
-from authlib.integrations.httpx_client import AsyncOAuth2Client
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
 from mcp.server.auth.provider import TokenError
 
 from test_http_service import (

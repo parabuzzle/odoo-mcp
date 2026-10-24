@@ -186,7 +186,7 @@ async def create_app(config=None, *, backend=None, auth=None):
     config = config or HTTPSettings.from_env()
     redactor = SecretRedactor((required("ODOO_API_KEY"), config.oidc_client_secret, config.signing_key))
     install_redactor(redactor)
-    for name in ("httpx", "httpcore", "odoorpc", "fastmcp.server.auth"):
+    for name in ("httpx", "httpcore", "httpx2", "httpcore2", "odoorpc", "fastmcp.server.auth"):
         logging.getLogger(name).setLevel(logging.WARNING)
     auth = auth or OdooOAuthProvider(config)
     backend = backend or OdooMCPServer()
@@ -211,7 +211,7 @@ async def create_app(config=None, *, backend=None, auth=None):
         if definition.name not in READ_TOOLS | config.write_tools:
             continue
         readonly = definition.name in READ_TOOLS
-        parameters = deepcopy(definition.inputSchema)
+        parameters = deepcopy(definition.input_schema)
         for name, schema in parameters.get("properties", {}).items():
             if name == "limit" or name.endswith("_limit"):
                 schema.update(minimum=1, maximum=MAX_RECORDS)

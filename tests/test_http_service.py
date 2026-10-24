@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import jwt
 import pytest
-from authlib.integrations.httpx_client import AsyncOAuth2Client
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
@@ -158,6 +158,46 @@ def test_discovery_auth_required_and_host_boundaries(setup):
         assert client.get("/healthz", headers={"Host": "attacker.example"}).status_code == 400
         assert client.post("/register", headers={"Origin": "https://evil.example"}, json={}).status_code == 403
         assert client.post("/register", content=b"x" * 65537).status_code == 413
+
+
+@pytest.mark.parametrize("version", ["2025-11-25", "2026-07-28"])
+def test_protocol_versions_enforce_auth_and_read_policy(setup, version):
+    config, _ = setup
+    client, backend, _ = make_client(config)
+    with client:
+        _, tokens = login(client)
+
+        def request(method, params=None, token=None):
+            params = dict(params or {})
+            if version == "2026-07-28":
+                params["_meta"] = {
+                    "io.modelcontextprotocol/protocolVersion": version,
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                    "io.modelcontextprotocol/clientInfo": {"name": "migration-test", "version": "1"},
+                }
+            return client.post("/mcp", headers={
+                "Authorization": "Bearer " + (token or tokens["access_token"]),
+                "MCP-Protocol-Version": version,
+                "MCP-Method": method,
+                **({"MCP-Name": params["name"]} if "name" in params else {}),
+                "Accept": "application/json, text/event-stream",
+            }, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+
+        assert request("tools/list", token="invalid").status_code == 401
+        if version == "2026-07-28":
+            discovery = request("server/discover")
+        else:
+            discovery = request("initialize", {"protocolVersion": version,
+                "capabilities": {}, "clientInfo": {"name": "migration-test", "version": "1"}})
+        assert discovery.status_code == 200, discovery.text
+        assert "result" in discovery.json(), discovery.text
+        listed = request("tools/list")
+        assert {t["name"] for t in listed.json()["result"]["tools"]} == READ_TOOLS
+        called = request("tools/call", {"name": "list_projects", "arguments": {}})
+        assert called.json()["result"]["content"][0]["text"] == "fake Odoo response"
+        denied = request("tools/call", {"name": "create_task", "arguments": {"name": "denied"}})
+        assert denied.json()["result"]["isError"] is True
+        assert backend.calls == [("list_projects", {})]
 
 
 def test_oauth_read_tool_write_denial_restart_and_revocation(setup):

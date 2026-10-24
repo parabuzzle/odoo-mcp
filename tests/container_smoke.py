@@ -143,6 +143,23 @@ def main():
         _, stderr = stdio.communicate(timeout=15)
         assert stdio.returncode in (0, -15), stderr
         assert "list_projects" in {t["name"] for t in catalogue["result"]["tools"]}
+        # A separate connection exercises the sessionless protocol without an
+        # initialize handshake, using the same installed console entry point.
+        stdio = subprocess.Popen(["odoo-mcp"], env=env, stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True)
+        try:
+            catalogue = exchange({"jsonrpc": "2.0", "id": 3, "method": "tools/list",
+                "params": {"_meta": {
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                    "io.modelcontextprotocol/clientInfo": {"name": "container-smoke", "version": "1"},
+                }}}, 3)
+            assert "list_projects" in {t["name"] for t in catalogue["result"]["tools"]}
+        finally:
+            stdio.terminate()
+            _, stderr = stdio.communicate(timeout=15)
+        assert stdio.returncode in (0, -15), stderr
         print("PASS: non-root read-only container, secret files, OIDC discovery, health, protected MCP, graceful shutdown, stdio catalogue")
 
 
