@@ -22,5 +22,5 @@ odoo-mcp = "odoo_mcp.server:cli"
 odoo-mcp-http = "odoo_mcp.http:main"
 
 [project.optional-dependencies]
-http = ["fastmcp==3.4.11", "mcp==1.30.0"]
+http = ["fastmcp==4.1.3", "mcp==1.30.0"]
 test = ["pytest>=9.1.1,<10", "httpx>=0.28.1,<1"]
