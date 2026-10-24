@@ -8,6 +8,7 @@ import datetime
 import json
 import os
 from pathlib import Path
+import select
 import shutil
 import ssl
 import subprocess
@@ -116,19 +117,31 @@ def main():
         assert b"fake-odoo-key" not in output
         assert b"fake-client-secret" not in output
         # Exercise the actual stdio console script without calling Odoo.
-        requests = [
-            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-                "protocolVersion": "2025-11-25", "capabilities": {},
-                "clientInfo": {"name": "container-smoke", "version": "1"}}},
-            {"jsonrpc": "2.0", "method": "notifications/initialized"},
-            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
-        ]
-        stdio = subprocess.run(["odoo-mcp"], env=env,
-                               input="".join(json.dumps(r) + "\n" for r in requests),
-                               text=True, capture_output=True, timeout=15)
-        assert stdio.returncode == 0, stdio.stderr
-        responses = [json.loads(line) for line in stdio.stdout.splitlines() if line]
-        catalogue = next(r for r in responses if r.get("id") == 2)
+        initialize = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-11-25", "capabilities": {},
+            "clientInfo": {"name": "container-smoke", "version": "1"}}}
+        initialized = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        list_tools = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+        stdio = subprocess.Popen(["odoo-mcp"], env=env, stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True)
+
+        def exchange(request, response_id):
+            stdio.stdin.write(json.dumps(request) + "\n")
+            stdio.stdin.flush()
+            readable, _, _ = select.select([stdio.stdout], [], [], 15)
+            assert readable, f"Timed out waiting for stdio response {response_id}"
+            response = json.loads(stdio.stdout.readline())
+            assert response.get("id") == response_id, response
+            return response
+
+        exchange(initialize, 1)
+        stdio.stdin.write(json.dumps(initialized) + "\n")
+        stdio.stdin.flush()
+        catalogue = exchange(list_tools, 2)
+        stdio.terminate()
+        _, stderr = stdio.communicate(timeout=15)
+        assert stdio.returncode in (0, -15), stderr
         assert "list_projects" in {t["name"] for t in catalogue["result"]["tools"]}
         print("PASS: non-root read-only container, secret files, OIDC discovery, health, protected MCP, graceful shutdown, stdio catalogue")
 

@@ -1,4 +1,4 @@
-pip>=26.2
+pip>=26.2.1
 hatchling
 setuptools
 wheel
