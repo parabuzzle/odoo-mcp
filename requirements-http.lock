@@ -86,6 +86,7 @@ caio==0.12.9 \
 certifi==2026.10.19 \
     --hash=sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b
     # via
+    #   fastmcp-slim
     #   httpcore
     #   httpx
     #   requests
@@ -454,13 +455,13 @@ exceptiongroup==1.3.1 \
     --hash=sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219 \
     --hash=sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598
     # via fastmcp-slim
-fastmcp==3.4.8 \
-    --hash=sha256:46012c42b84e054f159c90da7b7587cc320a60538ebcd1466a5475432776361d \
-    --hash=sha256:ab4e8abe6c9d50b110f367e8c29f82b90c1478ac9180be61af10354f84f0ad8c
+fastmcp==3.4.11 \
+    --hash=sha256:36273b04eff98021da4601d4f86c64dfa10e61119e9ddd17ad80650465c65355 \
+    --hash=sha256:f50a7aa4cc2a5954d02fcc9672ff1d69daff73a02387f959c2647523cd6d5606
     # via odoo-mcp (pyproject.toml)
-fastmcp-slim==3.4.8 \
-    --hash=sha256:dbd165ba40cb3267ce8a4385b5ea43231dbda19a7b80da1e04d95608ef5152e0 \
-    --hash=sha256:e72c6b74e90c5dcdc8f58087fbdf213636d8b5d339384a498de1c5df6fc037a7
+fastmcp-slim==3.4.11 \
+    --hash=sha256:24535dd843b3dcb3272b86c88fdf6ada5026c39ec5b56e2426557223c4d2c8bf \
+    --hash=sha256:50e29b0830fb216aba437f35cfc7dd4bce7451f2f85f8786d6fff3da78d79386
     # via fastmcp
 griffelib==2.3.2 \
     --hash=sha256:8e710afededd5607f95bf3c8ccc175ee306e7084459faf27b9f9f44ef2a7a274 \
